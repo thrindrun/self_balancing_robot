@@ -89,7 +89,9 @@ void loop() {
 void driveMotors(float pwm) {
   if (pwm > 0) pwm+=35;
   else if (pwm < 0) pwm-=35;
-  pwm = constrain(pwm,-255,255);
+  
+  if (pwm > 255) pwm = 255;
+  else if (pwm < -255) pwm = -255;
 
   if (pwm > 0) {
     digitalWrite(IN1,HIGH); digitalWrite(IN2,LOW);
