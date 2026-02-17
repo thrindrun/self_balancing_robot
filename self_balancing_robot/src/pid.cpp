@@ -16,7 +16,9 @@ float pid::compute(float setpoint, float measuredValue, float dt) {
     float D = kd*(error-lastError)/dt;
     float output = P+I+D;
     lastError = error;
-    return constrain(output,minOut,maxOut);
+    if (output > maxOut) output = maxOut;
+    else if (output < minOut) output = minOut;
+    return output;
 }
 
 void pid::reset() {
