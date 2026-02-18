@@ -74,15 +74,19 @@ void loop() {
     x_dot = (x-last_x)/dt;
 
     // control loops
-    angleSetpoint = posPID.compute(posSetpoint,x,dt); // desired angle
-    angleOutput = anglePID.compute(angleSetpoint,theta,dt); // pwm
-
-    // drive motors
-    driveMotors(angleOutput);
+    if (abs(theta) > 45) {
+      driveMotors(0);
+      posPID.reset();
+      anglePID.reset();
+    }
+    else {
+      angleSetpoint = posPID.compute(posSetpoint,x,dt); // desired angle
+      angleOutput = anglePID.compute(angleSetpoint,theta,dt); // pwm
+      driveMotors(angleOutput);
+    }
 
     last_x = x;
     lastTime = currentTime;
-
   }
 }
 
