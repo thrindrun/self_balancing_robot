@@ -1,5 +1,5 @@
 #include <Arduino.h>
-#include "pid.h"
+#include "lqr.h"
 #include "I2Cdev.h"
 #include "MPU6050_6Axis_MotionApps20.h"
 
@@ -17,21 +17,13 @@ const float DISTANCE_PER_TICK = (M_PI*WHEEL_DIAMETER)/CPR;
 // state variables
 volatile long leftEncoderCount = 0, rightEncoderCount = 0;
 float x = 0, x_dot = 0, last_x = 0;
-float theta = 0, theta_dot = 0;
+float theta = 0, theta_dot = 0, last_theta = 0;
 unsigned long lastTime = 0;
 
-// pid
-// position control
-float posSetpoint = 0, posInput, posOutput;
-float Kp_pos = 1, Ki_pos = 0.1, Kd_pos = 0.5; // BUNLAR DEĞİŞİCEK
-float minVal_pos = -10, maxVal_pos = 10;
-pid posPID(Kp_pos,Ki_pos,Kd_pos,minVal_pos,maxVal_pos);
-
-// angle control
-float angleSetpoint = 0, angleInput, angleOutput;
-float Kp_angle = 1, Ki_angle = 1, Kd_angle = 1; // BUNLAR DA DEĞİŞİCEK
-float minVal_angle = -255, maxVal_angle = 255;
-pid anglePID(Kp_angle,Ki_angle,Kd_angle,minVal_angle,maxVal_angle);
+// lqr
+float k1 = 1, k2 = 1, k3 = 1, k4 = 1;
+float min = -255, max = 255;
+lqr lqr1(k1,k2,k3,k4,min,max);
 
 // MPU6050
 MPU6050 mpu;
@@ -67,25 +59,24 @@ void loop() {
       mpu.dmpGetQuaternion(&q,fifobuffer);
       mpu.dmpGetGravity(&gravity,&q);
       mpu.dmpGetYawPitchRoll(ypr,&q,&gravity);
+
       theta = ypr[1] * 180/M_PI;
+      theta_dot = (theta - last_theta) / dt;
+      last_theta = theta;
     }
 
     x = ((leftEncoderCount+rightEncoderCount)/2.0)*DISTANCE_PER_TICK;
     x_dot = (x-last_x)/dt;
-
+    last_x = x;
     // control loops
     if (abs(theta) > 45) {
       driveMotors(0);
-      posPID.reset();
-      anglePID.reset();
     }
     else {
-      angleSetpoint = posPID.compute(posSetpoint,x,dt); // desired angle
-      angleOutput = anglePID.compute(angleSetpoint,theta,dt); // pwm
-      driveMotors(angleOutput);
+      float lqrOutput = lqr1.compute(x,x_dot,theta,theta_dot);
+      driveMotors(lqrOutput);
     }
-
-    last_x = x;
+    
     lastTime = currentTime;
   }
 }
