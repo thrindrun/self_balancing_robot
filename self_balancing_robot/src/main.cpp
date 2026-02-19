@@ -60,7 +60,7 @@ void loop() {
       mpu.dmpGetGravity(&gravity,&q);
       mpu.dmpGetYawPitchRoll(ypr,&q,&gravity);
 
-      theta = ypr[1] * 180/M_PI;
+      theta = ypr[1];
       theta_dot = (theta - last_theta) / dt;
       last_theta = theta;
     }
