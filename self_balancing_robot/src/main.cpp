@@ -1,5 +1,5 @@
 #include <Arduino.h>
-#include "lqr.h"
+#include "smc.h"
 #include "I2Cdev.h"
 #include "MPU6050_6Axis_MotionApps20.h"
 
@@ -20,10 +20,11 @@ float x = 0, x_dot = 0, last_x = 0;
 float theta = 0, theta_dot = 0, last_theta = 0;
 unsigned long lastTime = 0;
 
-// lqr
-float k1 = 1, k2 = 1, k3 = 1, k4 = 1;
+// smc
+float c1 = 1, c2 = 1, c3 = 1, c4 = 1;
+float eta = 1, phi = 1;
 float min = -255, max = 255;
-lqr lqr1(k1,k2,k3,k4,min,max);
+smc smc1(c1,c2,c3,c4,eta,phi,min,max);
 
 // MPU6050
 MPU6050 mpu;
@@ -60,7 +61,7 @@ void loop() {
       mpu.dmpGetGravity(&gravity,&q);
       mpu.dmpGetYawPitchRoll(ypr,&q,&gravity);
 
-      theta = ypr[1] * 180/M_PI;
+      theta = ypr[1];
       theta_dot = (theta - last_theta) / dt;
       last_theta = theta;
     }
@@ -68,13 +69,14 @@ void loop() {
     x = ((leftEncoderCount+rightEncoderCount)/2.0)*DISTANCE_PER_TICK;
     x_dot = (x-last_x)/dt;
     last_x = x;
+
     // control loops
     if (abs(theta) > 45) {
       driveMotors(0);
     }
     else {
-      float lqrOutput = lqr1.compute(x,x_dot,theta,theta_dot);
-      driveMotors(lqrOutput);
+      float smcOutput = smc1.compute(x,x_dot,theta,theta_dot);
+      driveMotors(smcOutput);
     }
     
     lastTime = currentTime;
