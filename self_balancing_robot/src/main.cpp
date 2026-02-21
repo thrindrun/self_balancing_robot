@@ -36,6 +36,7 @@ float ypr[3];
 // log
 unsigned logCounter = 0;
 const int logInterval = 5;
+float x_ref = 0, theta_ref = 0;
 
 void setup() {
   Serial.begin(115200);
@@ -51,6 +52,8 @@ void setup() {
   mpu.initialize();
   mpu.dmpInitialize();
   mpu.setDMPEnabled(true);
+
+  Serial.println("time,theta,angleSetpoint,x,x_dot,posSetpoint,pwm");
 }
 
 void loop() {
@@ -75,7 +78,7 @@ void loop() {
     last_x = x;
 
     // control loops
-    if (abs(theta) > 45) {
+    if (abs(theta) > 45*M_PI/180) {
       lqrOutput = 0;
       driveMotors(0);
     }
@@ -86,7 +89,16 @@ void loop() {
     
     lastTime = currentTime;
 
-
+    if (logCounter % logInterval == 0) {
+    Serial.print(currentTime / 1000.0, 3); Serial.print(",");
+    Serial.print(theta*180/M_PI, 2); Serial.print(",");
+    Serial.print(theta_ref, 2); Serial.print(",");
+    Serial.print(x, 3); Serial.print(",");
+    Serial.print(x_dot, 3); Serial.print(",");
+    Serial.print(x_ref, 3); Serial.print(",");
+    Serial.println(lqrOutput, 0);
+    }
+    logCounter++;
   }
 }
 
