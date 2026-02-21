@@ -40,6 +40,10 @@ Quaternion q;
 VectorFloat gravity;
 float ypr[3];
 
+// log 
+unsigned long logCounter = 0;
+const int logInterval = 5;
+
 void setup() {
   Serial.begin(115200);
   Wire.begin();
@@ -54,6 +58,8 @@ void setup() {
   mpu.initialize();
   mpu.dmpInitialize();
   mpu.setDMPEnabled(true);
+
+  Serial.println("time,theta,angleSetpoint,x,x_dot,posSetpoint,pwm");
 }
 
 void loop() {
@@ -75,6 +81,7 @@ void loop() {
 
     // control loops
     if (abs(theta) > 45) {
+      angleOutput = 0;
       driveMotors(0);
       posPID.reset();
       anglePID.reset();
@@ -87,6 +94,17 @@ void loop() {
 
     last_x = x;
     lastTime = currentTime;
+
+    if (logCounter % logInterval == 0) {
+      Serial.print(currentTime / 1000.0, 3); Serial.print(",");
+      Serial.print(theta, 2); Serial.print(",");
+      Serial.print(angleSetpoint, 2); Serial.print(",");
+      Serial.print(x, 3); Serial.print(",");
+      Serial.print(x_dot, 3); Serial.print(",");
+      Serial.print(posSetpoint, 3); Serial.print(",");
+      Serial.println(angleOutput, 0);
+    }
+    logCounter++;
   }
 }
 
