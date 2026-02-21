@@ -23,6 +23,7 @@ unsigned long lastTime = 0;
 // lqr
 float k1 = 1, k2 = 1, k3 = 1, k4 = 1;
 float min = -255, max = 255;
+float lqrOutput = 0;
 lqr lqr1(k1,k2,k3,k4,min,max);
 
 // MPU6050
@@ -31,6 +32,10 @@ uint8_t fifobuffer[64];
 Quaternion q;
 VectorFloat gravity;
 float ypr[3];
+
+// log
+unsigned logCounter = 0;
+const int logInterval = 5;
 
 void setup() {
   Serial.begin(115200);
@@ -68,16 +73,20 @@ void loop() {
     x = ((leftEncoderCount+rightEncoderCount)/2.0)*DISTANCE_PER_TICK;
     x_dot = (x-last_x)/dt;
     last_x = x;
+
     // control loops
     if (abs(theta) > 45) {
+      lqrOutput = 0;
       driveMotors(0);
     }
     else {
-      float lqrOutput = lqr1.compute(x,x_dot,theta,theta_dot);
+      lqrOutput = lqr1.compute(x,x_dot,theta,theta_dot);
       driveMotors(lqrOutput);
     }
     
     lastTime = currentTime;
+
+
   }
 }
 
