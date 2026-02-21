@@ -24,6 +24,7 @@ unsigned long lastTime = 0;
 float c1 = 1, c2 = 1, c3 = 1, c4 = 1;
 float eta = 1, phi = 1;
 float min = -255, max = 255;
+float smcOutput = 0;
 smc smc1(c1,c2,c3,c4,eta,phi,min,max);
 
 // MPU6050
@@ -32,6 +33,11 @@ uint8_t fifobuffer[64];
 Quaternion q;
 VectorFloat gravity;
 float ypr[3];
+
+// log
+unsigned long logCounter = 0;
+const int logInterval = 5;
+float theta_ref = 0, x_ref = 0;
 
 void setup() {
   Serial.begin(115200);
@@ -47,6 +53,8 @@ void setup() {
   mpu.initialize();
   mpu.dmpInitialize();
   mpu.setDMPEnabled(true);
+
+  Serial.println("time,theta,angleSetpoint,x,x_dot,posSetpoint,pwm");
 }
 
 void loop() {
@@ -71,15 +79,27 @@ void loop() {
     last_x = x;
 
     // control loops
-    if (abs(theta) > 45) {
+    if (abs(theta) > 45*M_PI/180) {
+      smcOutput = 0;
       driveMotors(0);
     }
     else {
-      float smcOutput = smc1.compute(x,x_dot,theta,theta_dot);
+      smcOutput = smc1.compute(x,x_dot,theta,theta_dot);
       driveMotors(smcOutput);
     }
     
     lastTime = currentTime;
+    
+    if (logCounter % logInterval == 0) {
+    Serial.print(currentTime / 1000.0, 3); Serial.print(",");
+    Serial.print(theta*180/M_PI, 2); Serial.print(",");
+    Serial.print(theta_ref, 2); Serial.print(",");
+    Serial.print(x, 3); Serial.print(",");
+    Serial.print(x_dot, 3); Serial.print(",");
+    Serial.print(x_ref, 3); Serial.print(",");
+    Serial.println(smcOutput, 0);
+    }
+    logCounter++;
   }
 }
 
