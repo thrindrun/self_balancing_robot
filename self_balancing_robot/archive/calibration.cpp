@@ -1,51 +1,63 @@
 #include <Arduino.h>
 
-// Pins (Matching your previous code)
+// Pins for BTS7960 (Matching your previous wiring)
 const int leftEncA = 2;   const int leftEncB = 4;
 const int rightEncA = 3;  const int rightEncB = 7;
-const int ENA = 10; const int IN1 = 9; const int IN2 = 8;
-const int ENB = 5;  const int IN3 = 12; const int IN4 = 11;
+
+// Left Driver
+const int R_PWM_L = 9;  const int L_PWM_L = 8;  const int EN_L = 10;
+// Right Driver
+const int R_PWM_R = 12; const int L_PWM_R = 11; const int EN_R = 5;
 
 volatile long leftCount = 0;
 volatile long rightCount = 0;
 
 void setup() {
   Serial.begin(115200);
+  
+  // Encoder Setup
   pinMode(leftEncA, INPUT_PULLUP); pinMode(leftEncB, INPUT_PULLUP);
   pinMode(rightEncA, INPUT_PULLUP); pinMode(rightEncB, INPUT_PULLUP);
-  pinMode(ENA, OUTPUT); pinMode(IN1, OUTPUT); pinMode(IN2, OUTPUT);
-  pinMode(ENB, OUTPUT); pinMode(IN3, OUTPUT); pinMode(IN4, OUTPUT);
+  
+  // BTS7960 Setup
+  pinMode(R_PWM_L, OUTPUT); pinMode(L_PWM_L, OUTPUT); pinMode(EN_L, OUTPUT);
+  pinMode(R_PWM_R, OUTPUT); pinMode(L_PWM_R, OUTPUT); pinMode(EN_R, OUTPUT);
 
+  // Enable Drivers (Must be HIGH for BTS7960 to work)
+  digitalWrite(EN_L, HIGH);
+  digitalWrite(EN_R, HIGH);
+
+  // Interrupts
   attachInterrupt(digitalPinToInterrupt(leftEncA), [](){(digitalRead(leftEncB)) ? leftCount++ : leftCount--;}, RISING);
   attachInterrupt(digitalPinToInterrupt(rightEncA), [](){(digitalRead(rightEncB)) ? rightCount++ : rightCount--;}, RISING);
 
-  Serial.println("--- HARDWARE CALIBRATION MODE ---");
-  Serial.println("1. Rotate wheels 1 full turn to find CPR.");
-  Serial.println("2. Testing motor deadzone in 5 seconds...");
-  delay(5000);
+  Serial.println("--- BTS7960 HARDWARE CALIBRATION ---");
+  Serial.println("1. ENCODERS: Rotate wheels 1 full turn forward to verify counts.");
+  Serial.println("2. DEADZONE: Watch PWM. Note the number when wheels START spinning.");
+  delay(3000);
 }
 
 void loop() {
-  // TEST 1: Print Encoder Counts
-  Serial.print("L_Ticks: "); Serial.print(leftCount);
-  Serial.print(" | R_Ticks: "); Serial.print(rightCount);
-
-  // TEST 2: Find Deadzone (Slowly ramp up speed)
   static int testPWM = 0;
   static unsigned long lastRamp = 0;
   
-  if (millis() - lastRamp > 500) {
-    testPWM += 5;
-    if (testPWM > 100) testPWM = 0; // Reset after 100
+  // Ramping PWM every 1 second for easier observation
+  if (millis() - lastRamp > 1000) {
+    testPWM += 2; // Slow ramp (+2) to find the exact deadzone
+    if (testPWM > 80) testPWM = 0; // Reset after 80 (should spin by then)
     lastRamp = millis();
     
-    // Drive only one direction for test
-    digitalWrite(IN1, HIGH); digitalWrite(IN2, LOW);
-    digitalWrite(IN3, HIGH); digitalWrite(IN4, LOW);
-    analogWrite(ENA, testPWM);
-    analogWrite(ENB, testPWM);
+    // Drive Forward: RPWM active, LPWM 0
+    analogWrite(R_PWM_L, testPWM);
+    analogWrite(L_PWM_L, 0);
+    analogWrite(R_PWM_R, testPWM);
+    analogWrite(L_PWM_R, 0);
   }
 
+  // Debugging Output
+  Serial.print("L_Ticks: "); Serial.print(leftCount);
+  Serial.print(" | R_Ticks: "); Serial.print(rightCount);
   Serial.print(" | Current_PWM: "); Serial.println(testPWM);
+  
   delay(100);
 }
