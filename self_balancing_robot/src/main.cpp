@@ -6,11 +6,17 @@
 // pins, BUNLAR AYARLANCAK
 const int leftEncA = 2; const int leftEncB = 4;
 const int rightEncA = 3; const int rightEncB = 7;
-const int ENA = 10; const int IN1 = 9; const int IN2 = 8;
-const int ENB = 5; const int IN3 = 12; const int IN4 = 11;
+// BTS7960 Pin Mapping
+const int R_PWM_L = 9;  // Connect to RPWM of Left Driver
+const int L_PWM_L = 8;  // Connect to LPWM of Left Driver
+const int EN_L = 10;    // Connect to R_EN and L_EN of Left Driver
+
+const int R_PWM_R = 12; // Connect to RPWM of Right Driver
+const int L_PWM_R = 11; // Connect to LPWM of Right Driver
+const int EN_R = 5;     // Connect to R_EN and L_EN of Right Driver
 
 // constants, BUNLAR DA AYARLANCAK
-const float WHEEL_DIAMETER = .065; 
+const float WHEEL_DIAMETER = .088; 
 const float CPR = 360.0; // counts per rev
 const float DISTANCE_PER_TICK = (M_PI*WHEEL_DIAMETER)/CPR;
 
@@ -48,8 +54,8 @@ void setup() {
   Serial.begin(115200);
   Wire.begin();
 
-  pinMode(ENA,OUTPUT); pinMode(IN1,OUTPUT); pinMode(IN2,OUTPUT);
-  pinMode(ENB,OUTPUT); pinMode(IN3,OUTPUT); pinMode(IN4,OUTPUT);
+  pinMode(R_PWM_L,OUTPUT); pinMode(L_PWM_L,OUTPUT); pinMode(EN_L,OUTPUT);
+  pinMode(R_PWM_R,OUTPUT); pinMode(L_PWM_R,OUTPUT); pinMode(EN_R,OUTPUT);
   pinMode(leftEncA,INPUT_PULLUP); pinMode(rightEncA,INPUT_PULLUP);
   attachInterrupt(digitalPinToInterrupt(leftEncA), [](){(digitalRead(leftEncB)) ? leftEncoderCount++ : leftEncoderCount--;}, RISING);
   attachInterrupt(digitalPinToInterrupt(rightEncA), [](){(digitalRead(rightEncB)) ? rightEncoderCount++ : rightEncoderCount--;}, RISING);
@@ -109,19 +115,25 @@ void loop() {
 }
 
 void driveMotors(float pwm) {
-  if (pwm > 0) pwm+=35;
-  else if (pwm < 0) pwm-=35;
+  if (pwm > 0) pwm+=20;
+  else if (pwm < 0) pwm-=20;
   
   if (pwm > 255) pwm = 255;
   else if (pwm < -255) pwm = -255;
 
-  if (pwm > 0) {
-    digitalWrite(IN1,HIGH); digitalWrite(IN2,LOW);
-    digitalWrite(IN3,HIGH); digitalWrite(IN4,LOW);
+  if (pwm >= 0) {
+    // Forward: RPWM gets signal, LPWM is 0
+    analogWrite(R_PWM_L, pwm);
+    analogWrite(L_PWM_L, 0);
+    analogWrite(R_PWM_R, pwm);
+    analogWrite(L_PWM_R, 0);
+  } else {
+    // Backward: LPWM gets signal, RPWM is 0
+    analogWrite(R_PWM_L, 0);
+    analogWrite(L_PWM_L, abs(pwm));
+    analogWrite(R_PWM_R, 0);
+    analogWrite(L_PWM_R, abs(pwm));
   }
-  else {
-    digitalWrite(IN1,LOW); digitalWrite(IN2,HIGH);
-    digitalWrite(IN3,LOW); digitalWrite(IN4,HIGH);
-  }
-  analogWrite(ENA,abs(pwm)); analogWrite(ENB,abs(pwm));
+  digitalWrite(EN_L, HIGH);
+  digitalWrite(EN_R, HIGH);
 }
