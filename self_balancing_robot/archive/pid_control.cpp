@@ -31,7 +31,7 @@ unsigned long lastTime = 0;
 float posSetpoint = 0, posInput, posOutput;
 float Kp_pos = 1, Ki_pos = 0.1, Kd_pos = 0.5; // BUNLAR DEĞİŞİCEK
 float minVal_pos = -10, maxVal_pos = 10;
-pid posPID(Kp_pos,Ki_pos,Kd_pos,minVal_pos,maxVal_pos);
+//pid posPID(Kp_pos,Ki_pos,Kd_pos,minVal_pos,maxVal_pos);
 
 // angle control
 float angleSetpoint = 0, angleInput, angleOutput;
@@ -53,6 +53,7 @@ const int logInterval = 5;
 void setup() {
   Serial.begin(115200);
   Wire.begin();
+  Wire.setClock(400000); // 400kHz I2C clock for faster communication
 
   pinMode(R_PWM_L,OUTPUT); pinMode(L_PWM_L,OUTPUT); pinMode(EN_L,OUTPUT);
   pinMode(R_PWM_R,OUTPUT); pinMode(L_PWM_R,OUTPUT); pinMode(EN_R,OUTPUT);
@@ -65,17 +66,24 @@ void setup() {
   mpu.dmpInitialize();
   mpu.setDMPEnabled(true);
 
+  mpu.setXAccelOffset(-2271); 
+  mpu.setYAccelOffset(803);   
+  mpu.setZAccelOffset(1117);  
+  mpu.setXGyroOffset(573);    
+  mpu.setYGyroOffset(-723);   
+  mpu.setZGyroOffset(132);
+  Serial.println(F("Offsets applied to MPU6050."));
+
   Serial.println("time,theta,angleSetpoint,x,x_dot,posSetpoint,pwm");
 }
 
 void loop() {
-  unsigned long currentTime = millis();
-  float dt = (currentTime - lastTime)/1000.0;
+  unsigned long currentTime = micros();
+  float dt = (currentTime - lastTime)/1000000.0;
 
   if (dt >= 0.01) {
     // get states
-    if (mpu.getFIFOCount()>=42){
-      mpu.getFIFOBytes(fifobuffer,42);
+    if (mpu.dmpGetCurrentFIFOPacket(fifobuffer)){
       mpu.dmpGetQuaternion(&q,fifobuffer);
       mpu.dmpGetGravity(&gravity,&q);
       mpu.dmpGetYawPitchRoll(ypr,&q,&gravity);
@@ -89,11 +97,11 @@ void loop() {
     if (abs(theta) > 45) {
       angleOutput = 0;
       driveMotors(0);
-      posPID.reset();
+      //posPID.reset();
       anglePID.reset();
     }
     else {
-      angleSetpoint = posPID.compute(posSetpoint,x,dt); // desired angle
+      //angleSetpoint = posPID.compute(posSetpoint,x,dt); // desired angle
       angleOutput = anglePID.compute(angleSetpoint,theta,dt); // pwm
       driveMotors(angleOutput);
     }
@@ -115,8 +123,9 @@ void loop() {
 }
 
 void driveMotors(float pwm) {
-  if (pwm > 0) pwm+=20;
-  else if (pwm < 0) pwm-=20;
+  int deadzone = 20;
+  if (pwm > 0) pwm+=deadzone;
+  else if (pwm < 0) pwm-=deadzone;
   
   if (pwm > 255) pwm = 255;
   else if (pwm < -255) pwm = -255;
@@ -125,14 +134,14 @@ void driveMotors(float pwm) {
     // Forward: RPWM gets signal, LPWM is 0
     analogWrite(R_PWM_L, pwm);
     analogWrite(L_PWM_L, 0);
-    analogWrite(R_PWM_R, pwm);
-    analogWrite(L_PWM_R, 0);
+    analogWrite(R_PWM_R, 0);
+    analogWrite(L_PWM_R, pwm);
   } else {
     // Backward: LPWM gets signal, RPWM is 0
     analogWrite(R_PWM_L, 0);
     analogWrite(L_PWM_L, abs(pwm));
-    analogWrite(R_PWM_R, 0);
-    analogWrite(L_PWM_R, abs(pwm));
+    analogWrite(R_PWM_R, abs(pwm));
+    analogWrite(L_PWM_R, 0);
   }
   digitalWrite(EN_L, HIGH);
   digitalWrite(EN_R, HIGH);

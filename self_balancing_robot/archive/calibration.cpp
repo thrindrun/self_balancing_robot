@@ -1,39 +1,39 @@
 #include <Arduino.h>
 
-// Pins for BTS7960 (Matching your previous wiring)
-const int leftEncA = 2;   const int leftEncB = 4;
-const int rightEncA = 3;  const int rightEncB = 7;
+// Pins for the SINGLE driver/motor being tested
+const int encA = 2;   // Encoder A (Hardware Interrupt Pin)
+const int encB = 4;   // Encoder B
 
-// Left Driver
-const int R_PWM_L = 9;  const int L_PWM_L = 8;  const int EN_L = 10;
-// Right Driver
-const int R_PWM_R = 12; const int L_PWM_R = 11; const int EN_R = 5;
+// BTS7960 Pins for the single motor
+const int R_PWM = 9;  
+const int L_PWM = 8;  
+const int EN = 10;    // Connect to BOTH R_EN and L_EN
 
-volatile long leftCount = 0;
-volatile long rightCount = 0;
+volatile long count = 0;
 
 void setup() {
   Serial.begin(115200);
   
-  // Encoder Setup
-  pinMode(leftEncA, INPUT_PULLUP); pinMode(leftEncB, INPUT_PULLUP);
-  pinMode(rightEncA, INPUT_PULLUP); pinMode(rightEncB, INPUT_PULLUP);
+  // Encoder Pins
+  pinMode(encA, INPUT_PULLUP); 
+  pinMode(encB, INPUT_PULLUP);
   
-  // BTS7960 Setup
-  pinMode(R_PWM_L, OUTPUT); pinMode(L_PWM_L, OUTPUT); pinMode(EN_L, OUTPUT);
-  pinMode(R_PWM_R, OUTPUT); pinMode(L_PWM_R, OUTPUT); pinMode(EN_R, OUTPUT);
+  // BTS7960 Pins
+  pinMode(R_PWM, OUTPUT); 
+  pinMode(L_PWM, OUTPUT); 
+  pinMode(EN, OUTPUT);
 
-  // Enable Drivers (Must be HIGH for BTS7960 to work)
-  digitalWrite(EN_L, HIGH);
-  digitalWrite(EN_R, HIGH);
+  // Activate the driver
+  digitalWrite(EN, HIGH);
 
-  // Interrupts
-  attachInterrupt(digitalPinToInterrupt(leftEncA), [](){(digitalRead(leftEncB)) ? leftCount++ : leftCount--;}, RISING);
-  attachInterrupt(digitalPinToInterrupt(rightEncA), [](){(digitalRead(rightEncB)) ? rightCount++ : rightCount--;}, RISING);
+  // Hardware Interrupt for accurate counting
+  attachInterrupt(digitalPinToInterrupt(encA), [](){
+    (digitalRead(encB)) ? count++ : count--;
+  }, RISING);
 
-  Serial.println("--- BTS7960 HARDWARE CALIBRATION ---");
-  Serial.println("1. ENCODERS: Rotate wheels 1 full turn forward to verify counts.");
-  Serial.println("2. DEADZONE: Watch PWM. Note the number when wheels START spinning.");
+  Serial.println("--- SINGLE MOTOR CALIBRATION ---");
+  Serial.println("1. ENCODER: Rotate wheel 1 full turn to find CPR.");
+  Serial.println("2. DEADZONE: Note PWM when the wheel starts moving.");
   delay(3000);
 }
 
@@ -41,22 +41,19 @@ void loop() {
   static int testPWM = 0;
   static unsigned long lastRamp = 0;
   
-  // Ramping PWM every 1 second for easier observation
+  // Slow ramp-up to find the exact starting voltage
   if (millis() - lastRamp > 1000) {
-    testPWM += 2; // Slow ramp (+2) to find the exact deadzone
-    if (testPWM > 80) testPWM = 0; // Reset after 80 (should spin by then)
+    testPWM += 2; 
+    if (testPWM > 80) testPWM = 0; 
     lastRamp = millis();
     
-    // Drive Forward: RPWM active, LPWM 0
-    analogWrite(R_PWM_L, testPWM);
-    analogWrite(L_PWM_L, 0);
-    analogWrite(R_PWM_R, testPWM);
-    analogWrite(L_PWM_R, 0);
+    // Test RPWM direction
+    analogWrite(R_PWM, testPWM);
+    analogWrite(L_PWM, 0);
   }
 
-  // Debugging Output
-  Serial.print("L_Ticks: "); Serial.print(leftCount);
-  Serial.print(" | R_Ticks: "); Serial.print(rightCount);
+  // Monitor Ticks and PWM
+  Serial.print("Ticks: "); Serial.print(count);
   Serial.print(" | Current_PWM: "); Serial.println(testPWM);
   
   delay(100);
