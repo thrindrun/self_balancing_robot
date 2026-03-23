@@ -1,5 +1,5 @@
-#ifndef PID.h
-#define PID.h
+#ifndef PID_H
+#define PID_H
 
 class pid {
     private:

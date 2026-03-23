@@ -16,7 +16,7 @@ void setup() {
   
   digitalWrite(EN_L, HIGH); digitalWrite(EN_R, HIGH);
 
-  attachInterrupt(digitalPinToInterrupt(leftEncA), [](){(digitalRead(leftEncB)) ? leftCount++ : leftCount--;}, RISING);
+  attachInterrupt(digitalPinToInterrupt(leftEncA), [](){(digitalRead(leftEncB)) ? leftCount-- : leftCount++;}, RISING);
   attachInterrupt(digitalPinToInterrupt(rightEncA), [](){(digitalRead(rightEncB)) ? rightCount++ : rightCount--;}, RISING);
 
   Serial.println("--- SYSTEM CHECK MODE ---");
