@@ -7,13 +7,13 @@
 const int leftEncA = 2; const int leftEncB = 4;
 const int rightEncA = 3; const int rightEncB = 7;
 // BTS7960 Pin Mapping
-const int R_PWM_L = 9;  // Connect to RPWM of Left Driver
-const int L_PWM_L = 8;  // Connect to LPWM of Left Driver
-const int EN_L = 10;    // Connect to R_EN and L_EN of Left Driver
+const int R_PWM_L = 10;  // Connect to RPWM of Left Driver
+const int L_PWM_L = 9;  // Connect to LPWM of Left Driver
+const int EN_L = 8;    // Connect to R_EN and L_EN of Left Driver
 
-const int R_PWM_R = 12; // Connect to RPWM of Right Driver
-const int L_PWM_R = 11; // Connect to LPWM of Right Driver
-const int EN_R = 5;     // Connect to R_EN and L_EN of Right Driver
+const int R_PWM_R = 11; // Connect to RPWM of Right Driver
+const int L_PWM_R = 5; // Connect to LPWM of Right Driver
+const int EN_R = 6;     // Connect to R_EN and L_EN of Right Driver
 
 // constants, BUNLAR DA AYARLANCAK
 const float WHEEL_DIAMETER = .088; 

@@ -5,9 +5,9 @@ const int encA = 2;   // Encoder A (Hardware Interrupt Pin)
 const int encB = 4;   // Encoder B
 
 // BTS7960 Pins for the single motor
-const int R_PWM = 9;  
-const int L_PWM = 8;  
-const int EN = 10;    // Connect to BOTH R_EN and L_EN
+const int R_PWM = 10;  
+const int L_PWM = 9;  
+const int EN = 8;    // Connect to BOTH R_EN and L_EN
 
 volatile long count = 0;
 
@@ -43,13 +43,13 @@ void loop() {
   
   // Slow ramp-up to find the exact starting voltage
   if (millis() - lastRamp > 1000) {
-    testPWM += 2; 
-    if (testPWM > 80) testPWM = 0; 
+    testPWM += 10; 
+    if (testPWM > 255) testPWM = 0; 
     lastRamp = millis();
     
     // Test RPWM direction
-    analogWrite(R_PWM, testPWM);
-    analogWrite(L_PWM, 0);
+    analogWrite(R_PWM, 0);
+    analogWrite(L_PWM, testPWM);
   }
 
   // Monitor Ticks and PWM
