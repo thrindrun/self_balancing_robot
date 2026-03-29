@@ -21,22 +21,19 @@ const float DISTANCE_PER_TICK = (PI * WHEEL_DIAMETER) / CPR;
 volatile long leftEncoderCount = 0, rightEncoderCount = 0;
 float x = 0, x_dot = 0, last_x = 0;
 float theta = 0;
+float staticOffset = 0; // Found via calibration
 unsigned long lastTime = 0;
 
-// PID Setup - INNER LOOP (Angle)
+// PID Setup - Inner Loop (Angle)
 float angleSetpoint = 0, angleOutput;
-float Kp_angle = 12.0, Ki_angle = 0.2, Kd_angle = 1.2; 
+float Kp_angle = 10.0, Ki_angle = 0.0, Kd_angle = 1.0; 
 pid anglePID(Kp_angle, Ki_angle, Kd_angle, -255, 255);
 
-// PID Setup - MIDDLE LOOP (Velocity)
-float Kp_vel = 5.0, Ki_vel = 0.3; // Reduced Kp_vel slightly to favor position
+// PID Setup - Outer Loop (Velocity)
+// Note: These gains are usually MUCH smaller than angle gains
+float Kp_vel = 5.0, Ki_vel = 0.2; 
 float vel_i_term = 0;
-float velocitySetpoint = 0; 
-
-// PID Setup - OUTER LOOP (Position)
-// This loop runs every 20-50ms typically, but we'll keep it in the 100Hz for simplicity
-float Kp_pos = .5;  // Start very low!
-float target_x = 0;  // This is the "Anchor" spot on the floor
+float velocitySetpoint = 0; // We want to stay still (0 m/s)
 
 // MPU6050
 MPU6050 mpu;
@@ -66,7 +63,24 @@ void setup() {
 
   mpu.setXAccelOffset(-2396); mpu.setYAccelOffset(715); mpu.setZAccelOffset(1084);
   mpu.setXGyroOffset(584); mpu.setYGyroOffset(-699); mpu.setZGyroOffset(122);
-
+  /*  
+  // --- AUTO CALIBRATION ---
+  BTSerial.println("CALIBRATING... Hold robot at balance point!");
+  delay(2000);
+  float sumTheta = 0;
+  int samples = 200;
+  for (int i = 0; i < samples; i++) {
+    if (mpu.dmpGetCurrentFIFOPacket(fifobuffer)) {
+      mpu.dmpGetQuaternion(&q, fifobuffer);
+      mpu.dmpGetGravity(&gravity, &q);
+      mpu.dmpGetYawPitchRoll(ypr, &q, &gravity);
+      sumTheta += (ypr[1] * 180 / M_PI);
+    }
+    delay(10);
+  }
+  staticOffset = sumTheta / samples;
+  BTSerial.print("Offset Found: "); BTSerial.println(staticOffset);
+  */
   lastTime = micros();
 }
 
@@ -79,47 +93,39 @@ void loop() {
       mpu.dmpGetQuaternion(&q, fifobuffer);
       mpu.dmpGetGravity(&gravity, &q);
       mpu.dmpGetYawPitchRoll(ypr, &q, &gravity);
-      theta = (ypr[1] * 180 / M_PI);
+      theta = (ypr[1] * 180 / M_PI); //- staticOffset;
     }
 
-    // Encoder Math
+    // 1. Calculate Velocity (m/s)
     x = ((leftEncoderCount + rightEncoderCount) / 2.0) * DISTANCE_PER_TICK;
     float raw_x_dot = (x - last_x) / dt;
-    x_dot = (x_dot * 0.8) + (raw_x_dot * 0.2); // Heavy filter for smooth velocity
+    x_dot = (x_dot * 0.7) + (raw_x_dot * 0.3); // Low-pass filter for stability
 
     if (abs(theta) > 45) {
       driveMotors(0);
       anglePID.reset();
-      vel_i_term = 0;
-      target_x = x; // Reset target to current position when fallen
+      vel_i_term = 0; // Reset velocity integral
     } else {
-      
-      // 1. POSITION LOOP (Outer)
-      //float x_error = target_x - x;
-      //velocitySetpoint = x_error * Kp_pos; 
-      //velocitySetpoint = constrain(velocitySetpoint, -0.5, 0.5); // Max speed 0.5m/s
-
-      // 2. VELOCITY LOOP (Middle)
+      // 2. OUTER LOOP: Velocity control decides the target angle
       float vel_error = velocitySetpoint - x_dot;
       vel_i_term += vel_error * dt;
-      vel_i_term = constrain(vel_i_term, -5, 5); 
+      vel_i_term = constrain(vel_i_term, -5, 5); // Prevent integral windup
       
+      // The output of velocity loop is our new angle setpoint
       angleSetpoint = (Kp_vel * vel_error) + (Ki_vel * vel_i_term);
-      angleSetpoint = constrain(angleSetpoint, -5, 5); // Max lean 10 degrees
+      angleSetpoint = constrain(angleSetpoint, -10, 10); // Limit lean angle to 10 degrees
 
-      // 3. ANGLE LOOP (Inner)
+      // 3. INNER LOOP: Standard angle control
       angleOutput = anglePID.compute(angleSetpoint, theta, dt);
       driveMotors(angleOutput);
     }
 
-    // Logging for Tuning
+    // Logging
     static int logCount = 0;
-    if (logCount++ % 15 == 0) {
-      BTSerial.print("X:"); BTSerial.print(x, 2);
-      BTSerial.print(" V:"); BTSerial.print(x_dot, 2);
-      BTSerial.print(" S:"); BTSerial.println(angleSetpoint, 1);
-      BTSerial.println(theta,2);
-      BTSerial.println(angleOutput,0);
+    if (logCount++ % 10 == 0) {
+      BTSerial.print("T:"); BTSerial.print(theta, 1);
+      BTSerial.print(" S:"); BTSerial.print(angleSetpoint, 1);
+      BTSerial.print(" V:"); BTSerial.println(x_dot, 2);
     }
 
     last_x = x;
@@ -128,9 +134,10 @@ void loop() {
 }
 
 void driveMotors(float pwm) {
-  int deadzone = 30; // Unified deadzone for simplicity
-  if (pwm > 0) pwm += deadzone;
-  else if (pwm < 0) pwm -= deadzone;
+  int deadzone_fwd = 30;
+  int deadzone_rev = 30;
+  if (pwm > 0) pwm += deadzone_fwd;
+  else if (pwm < 0) pwm -= deadzone_rev;
   
   pwm = constrain(pwm, -255, 255);
 

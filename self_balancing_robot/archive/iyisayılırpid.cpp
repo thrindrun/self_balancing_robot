@@ -25,17 +25,17 @@ unsigned long lastTime = 0;
 
 // PID Setup - INNER LOOP (Angle)
 float angleSetpoint = 0, angleOutput;
-float Kp_angle = 12.0, Ki_angle = 0.2, Kd_angle = 1.2; 
+float Kp_angle = 10.0, Ki_angle = 0.0, Kd_angle = 1.0; 
 pid anglePID(Kp_angle, Ki_angle, Kd_angle, -255, 255);
 
 // PID Setup - MIDDLE LOOP (Velocity)
-float Kp_vel = 5.0, Ki_vel = 0.3; // Reduced Kp_vel slightly to favor position
+float Kp_vel = 2.0, Ki_vel = 0.1; // Reduced Kp_vel slightly to favor position
 float vel_i_term = 0;
 float velocitySetpoint = 0; 
 
 // PID Setup - OUTER LOOP (Position)
 // This loop runs every 20-50ms typically, but we'll keep it in the 100Hz for simplicity
-float Kp_pos = .5;  // Start very low!
+float Kp_pos = 0.8;  // Start very low!
 float target_x = 0;  // This is the "Anchor" spot on the floor
 
 // MPU6050
@@ -95,9 +95,9 @@ void loop() {
     } else {
       
       // 1. POSITION LOOP (Outer)
-      //float x_error = target_x - x;
-      //velocitySetpoint = x_error * Kp_pos; 
-      //velocitySetpoint = constrain(velocitySetpoint, -0.5, 0.5); // Max speed 0.5m/s
+      float x_error = target_x - x;
+      velocitySetpoint = x_error * Kp_pos; 
+      velocitySetpoint = constrain(velocitySetpoint, -0.5, 0.5); // Max speed 0.5m/s
 
       // 2. VELOCITY LOOP (Middle)
       float vel_error = velocitySetpoint - x_dot;
@@ -105,7 +105,7 @@ void loop() {
       vel_i_term = constrain(vel_i_term, -5, 5); 
       
       angleSetpoint = (Kp_vel * vel_error) + (Ki_vel * vel_i_term);
-      angleSetpoint = constrain(angleSetpoint, -5, 5); // Max lean 10 degrees
+      angleSetpoint = constrain(angleSetpoint, -10, 10); // Max lean 10 degrees
 
       // 3. ANGLE LOOP (Inner)
       angleOutput = anglePID.compute(angleSetpoint, theta, dt);
@@ -118,8 +118,6 @@ void loop() {
       BTSerial.print("X:"); BTSerial.print(x, 2);
       BTSerial.print(" V:"); BTSerial.print(x_dot, 2);
       BTSerial.print(" S:"); BTSerial.println(angleSetpoint, 1);
-      BTSerial.println(theta,2);
-      BTSerial.println(angleOutput,0);
     }
 
     last_x = x;
