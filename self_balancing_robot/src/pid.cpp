@@ -21,6 +21,10 @@ float pid::compute(float setpoint, float measuredValue, float dt) {
     return output;
 }
 
+void pid::setKp(float p) {kp = p;}
+void pid::setKi(float i) {ki = i;}
+void pid::setKd(float d) {kd = d;}
+
 void pid::reset() {
     integral = 0;
     lastError = 0;

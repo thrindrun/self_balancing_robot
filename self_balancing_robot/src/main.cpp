@@ -8,11 +8,27 @@ portMUX_TYPE myMux = portMUX_INITIALIZER_UNLOCKED;
 
 NimBLEServer* pServer = NULL;
 NimBLECharacteristic* pTxCharacteristic = NULL;
+NimBLECharacteristic* pRxCharacteristic = NULL;
+
 bool deviceConnected = false;
-class MyServerCallbacks: public NimBLEServerCallbacks {
+class ConnectionHandler: public NimBLEServerCallbacks {
     void onConnect(NimBLEServer* pServer) { deviceConnected = true; };
     void onDisconnect(NimBLEServer* pServer) { deviceConnected = false; }
 };
+
+class TuningHandler: public NimBLECharacteristicCallbacks {
+    void onWrite(NimBLECharacteristic* pCharacteristic) {
+        std::string value = pCharacteristic->getValue();
+        if (value.length() > 0) {
+            Serial.print("Received value: ");
+            Serial.println(value.c_str()); }
+    }
+};
+
+pid positionPID(0.05, 0.0, 0.002, -0.5,0.5); // PID for position control
+pid velocityPID(0.6, 0.0, 0.02, -10, 10); // PID for velocity control
+pid anglePID(12.0,0.2,1.2,-1023,1023);
+
 MPU6050 mpu;
 
 volatile long leftEncoderCount = 0, rightEncoderCount = 0;
@@ -70,9 +86,24 @@ void loop() {
             float vel = v_velocity;
             portEXIT_CRITICAL(&myMux);
             char buffer[100];
-            snprintf(buffer, sizeof(buffer), "Theta: %.2f, PWM: %.2f, Pos: %.2f, Vel: %.2f", t, p, pos, vel);
+            snprintf(buffer, sizeof(buffer), "Theta: %.2f, PWM: %.0f, Pos: %.2f, Vel: %.2f", t, p, pos, vel);
             pTxCharacteristic->setValue(buffer);
             pTxCharacteristic->notify();
+        }
+    }
+
+    if (deviceConnected) {
+        std::string rxValue = pRxCharacteristic->getValue();
+        if (rxValue.length() > 0) {
+            // command format "P15.5" for Kp, "I0.1" for Ki, "D1.2" for Kd
+            char type = rxValue[0];
+            float value = atof(rxValue.substr(1).c_str());
+            if (type == 'P') anglePID.setKp(value);
+            else if (type == 'I') anglePID.setKi(value);
+            else if (type == 'D') anglePID.setKd(value);
+
+            Serial.printf("Received PID update: %c = %.2f\n", type, value);
+            pRxCharacteristic->setValue("");
         }
     }
 }
@@ -88,11 +119,6 @@ void controlTask(void *pvParameters) {
     mpu.setDMPEnabled(true);
     Serial.println("MPU6050 DMP initialized and enabled!");
     vTaskDelay(pdMS_TO_TICKS(1000)); // Allow some time for the DMP to stabilize
-
-    pid positionPID(0.05, 0.0, 0.002, -0.5,0.5); // PID for position control
-    pid velocityPID(0.6, 0.0, 0.02, -10, 10); // PID for velocity control
-    pid anglePID(12.0,0.2,1.2,-1023,1023);
-
 
     float target_position = 0;
     float target_speed = 0;
@@ -179,9 +205,13 @@ void setupBLE() {
     NimBLEDevice::init("ESP32_SelfBalancingBot");
     NimBLEDevice::setMTU(100);
     pServer = NimBLEDevice::createServer();
-    pServer->setCallbacks(new MyServerCallbacks());
+    pServer->setCallbacks(new ConnectionHandler());
     NimBLEService* pService = pServer->createService("6E400001-B5A3-F393-E0A9-E50E24DCCA9E");
+    // TX Characteristic (ESP32 -> Phone)
     pTxCharacteristic = pService->createCharacteristic("6E400003-B5A3-F393-E0A9-E50E24DCCA9E", NIMBLE_PROPERTY::NOTIFY);
+    // RX Characteristic (Phone -> ESP32)
+    pRxCharacteristic = pService->createCharacteristic("6E400002-B5A3-F393-E0A9-E50E24DCCA9E", NIMBLE_PROPERTY::WRITE);
+    pRxCharacteristic->setCallbacks(new TuningHandler());
     pService->start();
     pServer->getAdvertising()->start();
 }
