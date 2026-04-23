@@ -38,9 +38,11 @@ volatile float v_theta = 0, v_position = 0, v_pwm = 0, v_velocity = 0;
 const int R_PWM_L = 4, L_PWM_L = 5; 
 const int R_PWM_R = 6, L_PWM_R = 7;
 const int leftEncA = 8, leftEncB = 9, rightEncA = 10, rightEncB = 11;
-const int SDA_PIN = 1, SCL_PIN = 2;
+const int SDA_PIN = 17, SCL_PIN = 18;
 
 const float DIST_PER_TICK = (0.088f * M_PI) / 224.0f; // Wheel diameter 88mm, 224 ticks per revolution
+
+bool systemEnabled = false;
 
 void setupBLE();
 void driveMotors(float pwm);
@@ -86,24 +88,55 @@ void loop() {
             float vel = v_velocity;
             portEXIT_CRITICAL(&myMux);
             char buffer[100];
-            snprintf(buffer, sizeof(buffer), "Theta: %.2f, PWM: %.0f, Pos: %.2f, Vel: %.2f", t, p, pos, vel);
-            pTxCharacteristic->setValue(buffer);
-            pTxCharacteristic->notify();
+            int len = snprintf(buffer, sizeof(buffer), "Theta: %.2f, PWM: %.0f, Pos: %.2f, Vel: %.2f\n", t, p, pos, vel);
+            if (deviceConnected && len > 0) {
+                pTxCharacteristic->setValue((uint8_t*)buffer, len);
+                pTxCharacteristic->notify();
+            }
         }
     }
 
     if (deviceConnected) {
         std::string rxValue = pRxCharacteristic->getValue();
-        if (rxValue.length() > 0) {
-            // command format "P15.5" for Kp, "I0.1" for Ki, "D1.2" for Kd
-            char type = rxValue[0];
+        if (!rxValue.empty()) {
+        char type = rxValue[0];
+
+        if (type == 'S') {
+            systemEnabled = true;
+            char confirmBuf[64];
+            int cLen = snprintf(confirmBuf, sizeof(confirmBuf), ">> System Enabled\n");
+            pTxCharacteristic->setValue((uint8_t*)confirmBuf, cLen);
+            pTxCharacteristic->notify();
+        } else if (type == 'X') {
+            systemEnabled = false;
+            driveMotors(0);
+            positionPID.reset();
+            velocityPID.reset();
+            anglePID.reset();
+            char confirmBuf[64];
+            int cLen = snprintf(confirmBuf, sizeof(confirmBuf), ">> System Disabled\n");
+            pTxCharacteristic->setValue((uint8_t*)confirmBuf, cLen);
+            pTxCharacteristic->notify();
+        }
+        // Basic validation: ensures the first char is P, I, or D
+        else if (type == 'P' || type == 'I' || type == 'D') {
             float value = atof(rxValue.substr(1).c_str());
+            
             if (type == 'P') anglePID.setKp(value);
             else if (type == 'I') anglePID.setKi(value);
             else if (type == 'D') anglePID.setKd(value);
 
+            // Send confirmation back
+            char confirmBuf[64];
+            int cLen = snprintf(confirmBuf, sizeof(confirmBuf), ">> Update: %c set to %.2f\n", type, value);
+            pTxCharacteristic->setValue((uint8_t*)confirmBuf, cLen);
+            pTxCharacteristic->notify();
+            
             Serial.printf("Received PID update: %c = %.2f\n", type, value);
-            pRxCharacteristic->setValue("");
+        }
+
+        // 2. IMPORTANT: Clear the characteristic so we don't process it again
+        pRxCharacteristic->setValue(""); 
         }
     }
 }
@@ -113,8 +146,8 @@ void controlTask(void *pvParameters) {
     mpu.initialize();
     mpu.dmpInitialize();
     
-    mpu.setXAccelOffset(-2396); mpu.setYAccelOffset(715); mpu.setZAccelOffset(1084);
-    mpu.setXGyroOffset(584); mpu.setYGyroOffset(-699); mpu.setZGyroOffset(122);
+    mpu.setXAccelOffset(-2617); mpu.setYAccelOffset(820); mpu.setZAccelOffset(1099);
+    mpu.setXGyroOffset(582); mpu.setYGyroOffset(-709); mpu.setZGyroOffset(132);
 
     mpu.setDMPEnabled(true);
     Serial.println("MPU6050 DMP initialized and enabled!");
@@ -160,25 +193,25 @@ void controlTask(void *pvParameters) {
             mpu.dmpGetYawPitchRoll(ypr, &q, &gravity);
                 
             v_theta = ypr[1] * 180/M_PI; // Convert pitch to degrees
-                
-            if (abs(v_theta) > 45) {
-            v_pwm = 0;
-            driveMotors(0);
-            positionPID.reset();
-            velocityPID.reset();
-            anglePID.reset();
-            v_position = 0; // Reset position to prevent integral windup
-            v_velocity = 0; // Reset velocity to prevent integral windup
-            target_speed = 0;
-            target_angle = 0;
-            } else {
+            
+            if (systemEnabled && abs(v_theta) < 45) {
                 //position loop
-                target_speed = positionPID.compute(target_position, v_position, dt);
+                //target_speed = positionPID.compute(target_position, v_position, dt);
                 //velocity loop
-                target_angle = velocityPID.compute(target_speed, v_velocity, dt);
+                //target_angle = velocityPID.compute(target_speed, v_velocity, dt);
                 //angle loop
-                v_pwm = anglePID.compute(target_angle, v_theta, dt);
+                v_pwm = -anglePID.compute(target_angle, v_theta, dt);
                 driveMotors(v_pwm);
+            } else {
+                v_pwm = 0;
+                driveMotors(0);
+                positionPID.reset();
+                velocityPID.reset();
+                anglePID.reset();
+                v_position = 0; // Reset position to prevent integral windup
+                v_velocity = 0; // Reset velocity to prevent integral windup
+                target_speed = 0;
+                target_angle = 0;
             }
         }
     }
@@ -186,18 +219,28 @@ void controlTask(void *pvParameters) {
 
 
 void driveMotors(float pwm) {
-  int deadzone = 100; // Unified deadzone for simplicity
-  if (pwm > 0) pwm += deadzone;
-  else if (pwm < 0) pwm -= deadzone;
-  
-  pwm = constrain(pwm, -1023, 1023);
+  int deadzone = 160; // Unified deadzone for simplicity
 
-  if (pwm >= 0) {
-    ledcWrite(0, 0); ledcWrite(1, int(pwm));
-    ledcWrite(2, int(pwm)); ledcWrite(3, 0);
+  if (abs(pwm) > 1.0) {
+    if (pwm > 0) pwm += deadzone;
+    else if (pwm < 0) pwm -= deadzone;
   } else {
-    ledcWrite(0, abs((int)pwm)); ledcWrite(1, 0);
-    ledcWrite(2, 0); ledcWrite(3, abs((int)pwm));
+    pwm = 0; // If within -1 to 1, consider it as zero to prevent jitter
+  }
+
+  pwm = constrain(pwm, -1023, 1023);
+  
+  int duty = abs((int)pwm);
+
+  if (pwm > 0) {
+    ledcWrite(0, duty); ledcWrite(1, 0);
+    ledcWrite(2, 0); ledcWrite(3, duty);
+  } else if (pwm < 0) {
+    ledcWrite(0, 0); ledcWrite(1, duty);
+    ledcWrite(2, duty); ledcWrite(3, 0);
+  } else {
+    ledcWrite(0, 0); ledcWrite(1, 0);
+    ledcWrite(2, 0); ledcWrite(3, 0);
   }
 }
 

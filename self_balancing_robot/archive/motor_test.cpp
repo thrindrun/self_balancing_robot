@@ -39,13 +39,13 @@ void loop() {
         }
         return; // Skip deadzone test for now
     }
-
+    
     // 2. DEADZONE TEST PHASE
     if (test_pwm <= 500) {
         if (millis() - last_update > 250) { // Slower ramp for better observation
             last_update = millis();
-            ledcWrite(0, test_pwm); ledcWrite(1, 0);
-            ledcWrite(2, 0); ledcWrite(3, test_pwm);
+            ledcWrite(0, 0); ledcWrite(1, test_pwm);
+            ledcWrite(2, test_pwm); ledcWrite(3, 0);
             
             Serial.printf("TESTING PWM: %d | L: %ld | R: %ld\n", 
                           test_pwm, leftEncoderCount, rightEncoderCount);

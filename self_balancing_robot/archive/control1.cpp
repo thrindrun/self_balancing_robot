@@ -70,7 +70,7 @@ void setup() {
         (digitalRead(rightEncB)) ? rightEncoderCount++ : rightEncoderCount--;
     }, RISING);
 
-    Wire.begin(SDA_PIN, SCL_PIN, 400000); // Initialize I2C with specified pins and frequency
+    Wire.begin(SDA_PIN, SCL_PIN, 100000); // Initialize I2C with specified pins and frequency
 
     xTaskCreatePinnedToCore(controlTask, "controlTask", 10000, NULL, 1, NULL, 0); // Create control task on core 0
 }
@@ -86,24 +86,38 @@ void loop() {
             float vel = v_velocity;
             portEXIT_CRITICAL(&myMux);
             char buffer[100];
-            snprintf(buffer, sizeof(buffer), "Theta: %.2f, PWM: %.0f, Pos: %.2f, Vel: %.2f", t, p, pos, vel);
-            pTxCharacteristic->setValue(buffer);
-            pTxCharacteristic->notify();
+            int len = snprintf(buffer, sizeof(buffer), "Theta: %.2f, PWM: %.0f, Pos: %.2f, Vel: %.2f\n", t, p, pos, vel);
+            if (deviceConnected && len > 0) {
+                pTxCharacteristic->setValue((uint8_t*)buffer, len);
+                pTxCharacteristic->notify();
+            }
         }
     }
 
     if (deviceConnected) {
         std::string rxValue = pRxCharacteristic->getValue();
-        if (rxValue.length() > 0) {
-            // command format "P15.5" for Kp, "I0.1" for Ki, "D1.2" for Kd
-            char type = rxValue[0];
+        if (!rxValue.empty()) {
+        char type = rxValue[0];
+        
+        // Basic validation: ensures the first char is P, I, or D
+        if (type == 'P' || type == 'I' || type == 'D') {
             float value = atof(rxValue.substr(1).c_str());
+            
             if (type == 'P') anglePID.setKp(value);
             else if (type == 'I') anglePID.setKi(value);
             else if (type == 'D') anglePID.setKd(value);
 
+            // Send confirmation back
+            char confirmBuf[64];
+            int cLen = snprintf(confirmBuf, sizeof(confirmBuf), ">> Update: %c set to %.2f\n", type, value);
+            pTxCharacteristic->setValue((uint8_t*)confirmBuf, cLen);
+            pTxCharacteristic->notify();
+            
             Serial.printf("Received PID update: %c = %.2f\n", type, value);
-            pRxCharacteristic->setValue("");
+        }
+
+        // 2. IMPORTANT: Clear the characteristic so we don't process it again
+        pRxCharacteristic->setValue(""); 
         }
     }
 }
@@ -113,8 +127,8 @@ void controlTask(void *pvParameters) {
     mpu.initialize();
     mpu.dmpInitialize();
     
-    mpu.setXAccelOffset(-2396); mpu.setYAccelOffset(715); mpu.setZAccelOffset(1084);
-    mpu.setXGyroOffset(584); mpu.setYGyroOffset(-699); mpu.setZGyroOffset(122);
+    mpu.setXAccelOffset(-2617); mpu.setYAccelOffset(820); mpu.setZAccelOffset(1099);
+    mpu.setXGyroOffset(582); mpu.setYGyroOffset(-709); mpu.setZGyroOffset(132);
 
     mpu.setDMPEnabled(true);
     Serial.println("MPU6050 DMP initialized and enabled!");
@@ -177,7 +191,7 @@ void controlTask(void *pvParameters) {
                 //velocity loop
                 //target_angle = velocityPID.compute(target_speed, v_velocity, dt);
                 //angle loop
-                v_pwm = anglePID.compute(target_angle, v_theta, dt);
+                v_pwm = -anglePID.compute(target_angle, v_theta, dt);
                 driveMotors(v_pwm);
             }
         }
@@ -186,18 +200,23 @@ void controlTask(void *pvParameters) {
 
 
 void driveMotors(float pwm) {
-  int deadzone = 170; // Unified deadzone for simplicity
+  int deadzone = 160; // Unified deadzone for simplicity
   if (pwm > 0) pwm += deadzone;
   else if (pwm < 0) pwm -= deadzone;
   
   pwm = constrain(pwm, -1023, 1023);
+  
+  int duty = abs((int)pwm);
 
-  if (pwm >= 0) {
-    ledcWrite(0, 0); ledcWrite(1, int(pwm));
-    ledcWrite(2, int(pwm)); ledcWrite(3, 0);
+  if (pwm > 0) {
+    ledcWrite(0, duty); ledcWrite(1, 0);
+    ledcWrite(2, 0); ledcWrite(3, duty);
+  } else if (pwm < 0) {
+    ledcWrite(0, 0); ledcWrite(1, duty);
+    ledcWrite(2, duty); ledcWrite(3, 0);
   } else {
-    ledcWrite(0, abs((int)pwm)); ledcWrite(1, 0);
-    ledcWrite(2, 0); ledcWrite(3, abs((int)pwm));
+    ledcWrite(0, 0); ledcWrite(1, 0);
+    ledcWrite(2, 0); ledcWrite(3, 0);
   }
 }
 
