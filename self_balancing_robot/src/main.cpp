@@ -146,8 +146,8 @@ void controlTask(void *pvParameters) {
     mpu.initialize();
     mpu.dmpInitialize();
     
-    mpu.setXAccelOffset(-2617); mpu.setYAccelOffset(820); mpu.setZAccelOffset(1099);
-    mpu.setXGyroOffset(582); mpu.setYGyroOffset(-709); mpu.setZGyroOffset(132);
+    mpu.setXAccelOffset(-2360); mpu.setYAccelOffset(770); mpu.setZAccelOffset(1107);
+    mpu.setXGyroOffset(587); mpu.setYGyroOffset(-712); mpu.setZGyroOffset(136);
 
     mpu.setDMPEnabled(true);
     Serial.println("MPU6050 DMP initialized and enabled!");

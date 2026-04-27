@@ -146,17 +146,13 @@ with col3:
         local_pwms = list(state.pwms)
 
     if local_times:
-        # Create a single DataFrame with both columns
         df = pd.DataFrame({
             'Time': local_times,
-            'Theta (deg)': local_thetas,
-            'PWM Output': local_pwms
+            'Theta': local_thetas,
+            'PWM': local_pwms
         }).set_index('Time')
-        
-        # Displaying them together on one plot
-        # Note: Because PWM is ~1000 and Theta is ~20, 
-        # Theta will look very small unless you zoom in.
-        st.line_chart(df)
+        st.line_chart(df['Theta'])
+        st.line_chart(df['PWM'])
     else:
         st.info("Waiting for data from robot...")
 

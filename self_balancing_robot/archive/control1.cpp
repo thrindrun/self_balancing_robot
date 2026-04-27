@@ -42,6 +42,8 @@ const int SDA_PIN = 17, SCL_PIN = 18;
 
 const float DIST_PER_TICK = (0.088f * M_PI) / 224.0f; // Wheel diameter 88mm, 224 ticks per revolution
 
+bool systemEnabled = false;
+
 void setupBLE();
 void driveMotors(float pwm);
 void controlTask(void *pvParameters);
@@ -70,7 +72,7 @@ void setup() {
         (digitalRead(rightEncB)) ? rightEncoderCount++ : rightEncoderCount--;
     }, RISING);
 
-    Wire.begin(SDA_PIN, SCL_PIN, 100000); // Initialize I2C with specified pins and frequency
+    Wire.begin(SDA_PIN, SCL_PIN, 400000); // Initialize I2C with specified pins and frequency
 
     xTaskCreatePinnedToCore(controlTask, "controlTask", 10000, NULL, 1, NULL, 0); // Create control task on core 0
 }
@@ -98,9 +100,26 @@ void loop() {
         std::string rxValue = pRxCharacteristic->getValue();
         if (!rxValue.empty()) {
         char type = rxValue[0];
-        
+
+        if (type == 'S') {
+            systemEnabled = true;
+            char confirmBuf[64];
+            int cLen = snprintf(confirmBuf, sizeof(confirmBuf), ">> System Enabled\n");
+            pTxCharacteristic->setValue((uint8_t*)confirmBuf, cLen);
+            pTxCharacteristic->notify();
+        } else if (type == 'X') {
+            systemEnabled = false;
+            driveMotors(0);
+            positionPID.reset();
+            velocityPID.reset();
+            anglePID.reset();
+            char confirmBuf[64];
+            int cLen = snprintf(confirmBuf, sizeof(confirmBuf), ">> System Disabled\n");
+            pTxCharacteristic->setValue((uint8_t*)confirmBuf, cLen);
+            pTxCharacteristic->notify();
+        }
         // Basic validation: ensures the first char is P, I, or D
-        if (type == 'P' || type == 'I' || type == 'D') {
+        else if (type == 'P' || type == 'I' || type == 'D') {
             float value = atof(rxValue.substr(1).c_str());
             
             if (type == 'P') anglePID.setKp(value);
@@ -127,8 +146,8 @@ void controlTask(void *pvParameters) {
     mpu.initialize();
     mpu.dmpInitialize();
     
-    mpu.setXAccelOffset(-2617); mpu.setYAccelOffset(820); mpu.setZAccelOffset(1099);
-    mpu.setXGyroOffset(582); mpu.setYGyroOffset(-709); mpu.setZGyroOffset(132);
+    mpu.setXAccelOffset(-2360); mpu.setYAccelOffset(770); mpu.setZAccelOffset(1107);
+    mpu.setXGyroOffset(587); mpu.setYGyroOffset(-712); mpu.setZGyroOffset(136);
 
     mpu.setDMPEnabled(true);
     Serial.println("MPU6050 DMP initialized and enabled!");
@@ -174,18 +193,8 @@ void controlTask(void *pvParameters) {
             mpu.dmpGetYawPitchRoll(ypr, &q, &gravity);
                 
             v_theta = ypr[1] * 180/M_PI; // Convert pitch to degrees
-                
-            if (abs(v_theta) > 45) {
-            v_pwm = 0;
-            driveMotors(0);
-            positionPID.reset();
-            velocityPID.reset();
-            anglePID.reset();
-            v_position = 0; // Reset position to prevent integral windup
-            v_velocity = 0; // Reset velocity to prevent integral windup
-            target_speed = 0;
-            target_angle = 0;
-            } else {
+            
+            if (systemEnabled && abs(v_theta) < 45) {
                 //position loop
                 //target_speed = positionPID.compute(target_position, v_position, dt);
                 //velocity loop
@@ -193,6 +202,16 @@ void controlTask(void *pvParameters) {
                 //angle loop
                 v_pwm = -anglePID.compute(target_angle, v_theta, dt);
                 driveMotors(v_pwm);
+            } else {
+                v_pwm = 0;
+                driveMotors(0);
+                positionPID.reset();
+                velocityPID.reset();
+                anglePID.reset();
+                v_position = 0; // Reset position to prevent integral windup
+                v_velocity = 0; // Reset velocity to prevent integral windup
+                target_speed = 0;
+                target_angle = 0;
             }
         }
     }
@@ -201,9 +220,14 @@ void controlTask(void *pvParameters) {
 
 void driveMotors(float pwm) {
   int deadzone = 160; // Unified deadzone for simplicity
-  if (pwm > 0) pwm += deadzone;
-  else if (pwm < 0) pwm -= deadzone;
-  
+
+  if (abs(pwm) > 1.0) {
+    if (pwm > 0) pwm += deadzone;
+    else if (pwm < 0) pwm -= deadzone;
+  } else {
+    pwm = 0; // If within -1 to 1, consider it as zero to prevent jitter
+  }
+
   pwm = constrain(pwm, -1023, 1023);
   
   int duty = abs((int)pwm);
