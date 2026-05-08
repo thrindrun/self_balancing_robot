@@ -1,5 +1,5 @@
-#ifndef LQR.h
-#define LQR.h
+#ifndef LQR_H 
+#define LQR_H 
 
 class lqr {
     private:
