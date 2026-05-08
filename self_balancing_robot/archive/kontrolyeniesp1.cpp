@@ -1,5 +1,5 @@
 #include <Arduino.h>
-#include <NimBLEDevice.h> // bluetooth
+#include <NimBLEDevice.h>
 #include "pid.h"
 #include "I2Cdev.h"
 #include "MPU6050_6Axis_MotionApps20.h"
@@ -25,27 +25,29 @@ class TuningHandler: public NimBLECharacteristicCallbacks {
     }
 };
 
-pid positionPID(0.5, 0.0, 0.02, -2,2); // PID for position control
-pid velocityPID(0.6, 0.0, 0.02, -5, 5); // PID for velocity control
-pid anglePID(35.0,0.0,0.1,-1023,1023);
+pid positionPID(1.5, 0.0, 0.002, -2,2); // PID for position control
+pid velocityPID(0.6, 0.0, 0.02, -10, 10); // PID for velocity control
+pid anglePID(25.0,0.0,0.2,-1023,1023);
 
 MPU6050 mpu;
+
 volatile long leftEncoderCount = 0, rightEncoderCount = 0;
 volatile float v_theta = 0, v_position = 0, v_pwm = 0, v_velocity = 0;
-volatile float target_angle = 0;
+
 
 const int R_PWM_L = 2, L_PWM_L = 4; 
 const int R_PWM_R = 5, L_PWM_R = 18;
 const int leftEncA = 19, leftEncB = 23, rightEncA = 16, rightEncB = 17;
 const int SDA_PIN = 21, SCL_PIN = 22;
 
-const float DIST_PER_TICK = (0.088f * M_PI) / 224.0f; 
+const float DIST_PER_TICK = (0.088f * M_PI) / 224.0f; // Wheel diameter 88mm, 224 ticks per revolution
 
 bool systemEnabled = false;
 
 void setupBLE();
 void driveMotors(float pwm);
 void controlTask(void *pvParameters);
+
 void setup() {
     Serial.begin(115200);
     setupBLE();
@@ -70,9 +72,9 @@ void setup() {
         (digitalRead(rightEncB)) ? rightEncoderCount++ : rightEncoderCount--;
     }, RISING);
 
-    Wire.begin(SDA_PIN, SCL_PIN, 400000); 
+    Wire.begin(SDA_PIN, SCL_PIN, 400000); // Initialize I2C with specified pins and frequency
 
-    xTaskCreatePinnedToCore(controlTask, "controlTask", 10000, NULL, 1, NULL, 0); 
+    xTaskCreatePinnedToCore(controlTask, "controlTask", 10000, NULL, 1, NULL, 0); // Create control task on core 0
 }
 void loop() {
     static unsigned long lastPrint = 0;
@@ -116,20 +118,7 @@ void loop() {
             pTxCharacteristic->setValue((uint8_t*)confirmBuf, cLen);
             pTxCharacteristic->notify();
         }
-        if (type == 'W') { 
-        target_angle = -0.5; 
-        char confirmBuf[64];
-        int cLen = snprintf(confirmBuf, sizeof(confirmBuf), ">> Moving Forward\n");
-        pTxCharacteristic->setValue((uint8_t*)confirmBuf, cLen);
-        pTxCharacteristic->notify();
-} 
-        else if (type == 'K') { 
-        target_angle = 0; 
-        char confirmBuf[64];
-        int cLen = snprintf(confirmBuf, sizeof(confirmBuf), ">> Stopping/Balancing\n");
-        pTxCharacteristic->setValue((uint8_t*)confirmBuf, cLen);
-        pTxCharacteristic->notify();
-}
+        // Basic validation: ensures the first char is P, I, or D
         else if (type == 'P' || type == 'I' || type == 'D') {
             float value = atof(rxValue.substr(1).c_str());
             
@@ -137,6 +126,7 @@ void loop() {
             else if (type == 'I') anglePID.setKi(value);
             else if (type == 'D') anglePID.setKd(value);
 
+            // Send confirmation back
             char confirmBuf[64];
             int cLen = snprintf(confirmBuf, sizeof(confirmBuf), ">> Update: %c set to %.2f\n", type, value);
             pTxCharacteristic->setValue((uint8_t*)confirmBuf, cLen);
@@ -156,8 +146,8 @@ void controlTask(void *pvParameters) {
     mpu.initialize();
     mpu.dmpInitialize();
     
-    mpu.setXAccelOffset(-2547); mpu.setYAccelOffset(857); mpu.setZAccelOffset(1103);
-    mpu.setXGyroOffset(591); mpu.setYGyroOffset(-665); mpu.setZGyroOffset(139);
+    mpu.setXAccelOffset(-2360); mpu.setYAccelOffset(770); mpu.setZAccelOffset(1107);
+    mpu.setXGyroOffset(587); mpu.setYGyroOffset(-712); mpu.setZGyroOffset(136);
 
     mpu.setDMPEnabled(true);
     Serial.println("MPU6050 DMP initialized and enabled!");
@@ -165,7 +155,7 @@ void controlTask(void *pvParameters) {
 
     float target_position = 0;
     float target_speed = 0;
-    //float target_angle = 0;
+    float target_angle = 0;
     static long lastLeftCount = 0, lastRightCount = 0;
 
     uint8_t fifoBuffer[64];
@@ -206,7 +196,7 @@ void controlTask(void *pvParameters) {
             
             if (systemEnabled && abs(v_theta) < 45) {
                 //position loop
-                target_angle = positionPID.compute(target_position, v_position, dt);
+                //target_speed = positionPID.compute(target_position, v_position, dt);
                 //velocity loop
                 //target_angle = velocityPID.compute(target_speed, v_velocity, dt);
                 //angle loop
@@ -229,7 +219,7 @@ void controlTask(void *pvParameters) {
 
 
 void driveMotors(float pwm) {
-  int deadzone = 180; 
+  int deadzone = 160; // Unified deadzone for simplicity
 
   if (abs(pwm) > 1.0) {
     if (pwm > 0) pwm += deadzone;
@@ -243,11 +233,11 @@ void driveMotors(float pwm) {
   int duty = abs((int)pwm);
 
   if (pwm > 0) {
-    ledcWrite(0, 0); ledcWrite(1, duty);
-    ledcWrite(2, duty); ledcWrite(3, 0);
-  } else if (pwm < 0) {
     ledcWrite(0, duty); ledcWrite(1, 0);
     ledcWrite(2, 0); ledcWrite(3, duty);
+  } else if (pwm < 0) {
+    ledcWrite(0, 0); ledcWrite(1, duty);
+    ledcWrite(2, duty); ledcWrite(3, 0);
   } else {
     ledcWrite(0, 0); ledcWrite(1, 0);
     ledcWrite(2, 0); ledcWrite(3, 0);

@@ -7,6 +7,7 @@ from bleak import BleakClient, BleakScanner
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 
+
 # --- Configuration ---
 DEVICE_NAME = "ESP32_SelfBalancingBot"
 UART_SERVICE_UUID = "6E400001-B5A3-F393-E0A9-E50E24DCCA9E"
@@ -62,8 +63,7 @@ def notification_handler(sender, data):
             time_counter += 1
             
     except Exception as e:
-        print(f"Error parsing data: {e}")
-
+        print(f"BLE Connection Error: {type(e).__name__} - {e}")
 async def ble_task():
     """Main BLE connection and communication loop."""
     print(f"Scanning for {DEVICE_NAME}...")

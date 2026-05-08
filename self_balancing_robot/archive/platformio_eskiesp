@@ -8,22 +8,22 @@
 ; Please visit documentation for the other options and examples
 ; https://docs.platformio.org/page/projectconf.html
 
-[env:esp32dev]
+[env:esp32-s3-devkitc-1]
 platform = espressif32
-board = esp32dev
+board = esp32-s3-devkitc-1
 framework = arduino
 
-; İşlemci hızı (240MHz)
-board_build.f_cpu = 240000000L
-
-; Seri port hızı (Kodunuzdaki Serial.begin hızıyla aynı olmalı)
 monitor_speed = 115200
 
-; CH341 sürücüsü bazen yükleme hızında seçici olabilir, sorun yaşarsanız 460800'e düşürebilirsiniz
-upload_speed = 921600
+board_upload.flash_size = 16MB
+board_build.arduino.memory_type = qio_opi
+board_build.flash_mode = qio
 
-; Eğer birden fazla cihaz bağlıysa portu sabitleyebilirsiniz (Örnek: COM3 veya /dev/ttyUSB0)
-; upload_port = COMx
+build_flags =
+    -DBOARD_HAS_PSRAM
+    -mfix-esp32-psram-cache-issue
+
+upload_speed = 921600
 
 lib_deps =
     electroniccats/MPU6050
