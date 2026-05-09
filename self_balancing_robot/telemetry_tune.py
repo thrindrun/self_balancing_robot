@@ -20,6 +20,7 @@ MAX_POINTS = 200
 times = deque(maxlen=MAX_POINTS)
 thetas = deque(maxlen=MAX_POINTS)
 pwms = deque(maxlen=MAX_POINTS)
+positions = deque(maxlen=MAX_POINTS)
 time_counter = 0
 
 # Create a queue to safely pass messages from the input thread to the asyncio loop
@@ -52,18 +53,21 @@ def notification_handler(sender, data):
             return
             
         # Parse telemetry data
-        match = re.search(r"Theta:\s*([-\d.]+),\s*PWM:\s*([-\d.]+)", text)
+        match = re.search(r"Theta:\s*([-\d.]+),\s*PWM:\s*([-\d.]+),\s*Pos:\s*([-\d.]+)", text)
         if match:
             theta = float(match.group(1))
             pwm = float(match.group(2))
-            
+            pos = float(match.group(3))
+
             times.append(time_counter)
             thetas.append(theta)
             pwms.append(pwm)
+            positions.append(pos)
             time_counter += 1
             
     except Exception as e:
         print(f"BLE Connection Error: {type(e).__name__} - {e}")
+
 async def ble_task():
     """Main BLE connection and communication loop."""
     print(f"Scanning for {DEVICE_NAME}...")
@@ -109,7 +113,7 @@ def input_thread():
     print("Format: <P|I|D> <value>")
     print("Example: P 15.5")
     print("Example: I 0.5")
-    print ("Commands: S (Start), X (Stop)")
+    print ("Commands: S (Start), X (Stop), M (Move to Target)")
     print("=" * 50)
     
     while True:
@@ -118,7 +122,7 @@ def input_thread():
             if not cmd:
                 continue
 
-            if cmd in ['S', 'X']:
+            if cmd in ['S', 'X', 'M']:
                 send_queue.put(cmd)
                 continue
                 
@@ -158,7 +162,7 @@ def main():
     inp_thread.start()
 
     # 3. Setup Matplotlib Plotting (Must run in main thread)
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 8))
+    fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(10, 10))
     fig.canvas.manager.set_window_title('Self-Balancing Robot Telemetry')
     
     # Angle Plot
@@ -180,9 +184,19 @@ def main():
     ax2.legend(loc='upper right')
     ax2.grid(True)
 
+    # Position Plot
+    line_pos, = ax3.plot([], [], 'g-', label='Position (m)', linewidth=2)
+    ax3.set_xlim(0, MAX_POINTS)
+    ax3.set_ylim(0, 3) # Assuming position is in meters and small
+    ax3.set_title("Robot Position")
+    ax3.set_ylabel("Position (m)")
+    ax3.set_xlabel("Time (Samples)")
+    ax3.legend(loc='upper right')
+    ax3.grid(True)
+
     def animate(frame):
         if len(times) == 0:
-            return line_theta, line_pwm
+            return line_theta, line_pwm, line_pos
             
         x_data = list(times)
         
@@ -193,12 +207,15 @@ def main():
         
         ax1.set_xlim(x_min, x_max)
         ax2.set_xlim(x_min, x_max)
+        ax3.set_xlim(x_min, x_max)
+
 
         # Update data
         line_theta.set_data(x_data, list(thetas))
         line_pwm.set_data(x_data, list(pwms))
+        line_pos.set_data(x_data, list(positions))
         
-        return line_theta, line_pwm
+        return line_theta, line_pwm, line_pos
 
     # Update plot every 50ms (20 FPS)
     ani = animation.FuncAnimation(fig, animate, interval=50, blit=False, cache_frame_data=False)

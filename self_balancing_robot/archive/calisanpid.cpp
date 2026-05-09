@@ -1,6 +1,5 @@
 #include <Arduino.h>
 #include <NimBLEDevice.h> // bluetooth
-#include <math.h>
 #include "pid.h"
 #include "I2Cdev.h"
 #include "MPU6050_6Axis_MotionApps20.h"
@@ -29,7 +28,7 @@ class TuningHandler: public NimBLECharacteristicCallbacks {
 //pid positionPID(0.5, 0.0, 0.02, -2,2); // PID for position control
 //pid velocityPID(0.6, 0.0, 0.02, -5, 5); // PID for velocity control
 //pid anglePID(25.0,0.0,0.2,-1023,1023);
-pid positionPID(0.0018, 0, 0.0507, -2*M_PI/180, 2*M_PI/180); // PID for position control
+pid positionPID(0.0018, 0, 0.0507, -2, 2);
 pid anglePID(2000.0, 114.6763, 10.0, -1023, 1023);
 
 MPU6050 mpu;
@@ -41,12 +40,6 @@ const int R_PWM_L = 2, L_PWM_L = 4;
 const int R_PWM_R = 5, L_PWM_R = 18;
 const int leftEncA = 19, leftEncB = 23, rightEncA = 16, rightEncB = 17;
 const int SDA_PIN = 21, SCL_PIN = 22;
-
-
-float final_target = 1;
-float alpha = 0.1;
-unsigned long startTime = 0;
-bool movingToTarget = false;
 
 const float DIST_PER_TICK = (0.088f * M_PI) / 224.0f; 
 
@@ -125,17 +118,21 @@ void loop() {
             int cLen = snprintf(confirmBuf, sizeof(confirmBuf), ">> System Disabled\n");
             pTxCharacteristic->setValue((uint8_t*)confirmBuf, cLen);
             pTxCharacteristic->notify();
-        } else if (type == 'M') {
-            startTime = millis();
-            movingToTarget = true;
-            v_position = 0;
-            leftEncoderCount = 0;
-            rightEncoderCount = 0;
-            char confirmBuf[64];
-            int cLen = snprintf(confirmBuf, sizeof(confirmBuf), ">> Moving to target\n");
-            pTxCharacteristic->setValue((uint8_t*)confirmBuf, cLen);
-            pTxCharacteristic->notify();
         }
+        if (type == 'W') { 
+        target_angle = -15.0; 
+        char confirmBuf[64];
+        int cLen = snprintf(confirmBuf, sizeof(confirmBuf), ">> Moving Forward\n");
+        pTxCharacteristic->setValue((uint8_t*)confirmBuf, cLen);
+        pTxCharacteristic->notify();
+} 
+        else if (type == 'K') { 
+        target_angle = 0; 
+        char confirmBuf[64];
+        int cLen = snprintf(confirmBuf, sizeof(confirmBuf), ">> Stopping/Balancing\n");
+        pTxCharacteristic->setValue((uint8_t*)confirmBuf, cLen);
+        pTxCharacteristic->notify();
+}
         else if (type == 'P' || type == 'I' || type == 'D') {
             float value = atof(rxValue.substr(1).c_str());
             
@@ -175,7 +172,6 @@ void controlTask(void *pvParameters) {
     //float target_angle = 0;
     static long lastLeftCount = 0, lastRightCount = 0;
 
-
     uint8_t fifoBuffer[64];
     Quaternion q;
     VectorFloat gravity;
@@ -214,14 +210,6 @@ void controlTask(void *pvParameters) {
             v_theta = ypr[1];
 
             if (systemEnabled && abs(v_theta) < 45*M_PI/180) {
-                if (movingToTarget) {
-                    float elapsedSeconds = (millis()-startTime) / 1000.0f;
-                    target_position = final_target*(1-exp(-alpha*elapsedSeconds)); // Smoothly approach the target position
-                    if (abs(final_target - target_position) < 0.001f) {
-                       target_position = final_target; // Snap to final value
-                       movingToTarget = false; 
-                    }
-                }
                 //position loop
                 target_angle = positionPID.compute(target_position, v_position, dt);
                 //velocity loop
@@ -233,12 +221,12 @@ void controlTask(void *pvParameters) {
                 v_pwm = 0;
                 driveMotors(0);
                 positionPID.reset();
+                //velocityPID.reset();
                 anglePID.reset();
                 v_position = 0; // Reset position to prevent integral windup
                 v_velocity = 0; // Reset velocity to prevent integral windup
+                target_speed = 0;
                 target_angle = 0;
-                target_position = 0;
-                movingToTarget = false;
             }
         }
     }
