@@ -25,9 +25,11 @@ class TuningHandler: public NimBLECharacteristicCallbacks {
     }
 };
 
-pid positionPID(0.5, 0.0, 0.02, -2,2); // PID for position control
-pid velocityPID(0.6, 0.0, 0.02, -5, 5); // PID for velocity control
-pid anglePID(35.0,0.0,0.1,-1023,1023);
+//pid positionPID(0.5, 0.0, 0.02, -2,2); // PID for position control
+//pid velocityPID(0.6, 0.0, 0.02, -5, 5); // PID for velocity control
+//pid anglePID(25.0,0.0,0.2,-1023,1023);
+pid positionPID(0.0018, 0, 0.0507, -2, 2);
+pid anglePID(1500, 114.6763, 10, -1023, 1023);
 
 MPU6050 mpu;
 volatile long leftEncoderCount = 0, rightEncoderCount = 0;
@@ -85,8 +87,9 @@ void loop() {
             float pos = v_position;
             float vel = v_velocity;
             portEXIT_CRITICAL(&myMux);
+            float theta_deg = t * 180/M_PI;
             char buffer[100];
-            int len = snprintf(buffer, sizeof(buffer), "Theta: %.2f, PWM: %.0f, Pos: %.2f, Vel: %.2f\n", t, p, pos, vel);
+            int len = snprintf(buffer, sizeof(buffer), "Theta: %.2f, PWM: %.0f, Pos: %.2f, Vel: %.2f\n", theta_deg, p, pos, vel);
             if (deviceConnected && len > 0) {
                 pTxCharacteristic->setValue((uint8_t*)buffer, len);
                 pTxCharacteristic->notify();
@@ -109,7 +112,7 @@ void loop() {
             systemEnabled = false;
             driveMotors(0);
             positionPID.reset();
-            velocityPID.reset();
+            //velocityPID.reset();
             anglePID.reset();
             char confirmBuf[64];
             int cLen = snprintf(confirmBuf, sizeof(confirmBuf), ">> System Disabled\n");
@@ -202,9 +205,10 @@ void controlTask(void *pvParameters) {
             mpu.dmpGetGravity(&gravity, &q);
             mpu.dmpGetYawPitchRoll(ypr, &q, &gravity);
                 
-            v_theta = ypr[1] * 180/M_PI; // Convert pitch to degrees
-            
-            if (systemEnabled && abs(v_theta) < 45) {
+            //v_theta = ypr[1] * 180/M_PI; // Convert pitch to degrees
+            v_theta = ypr[1];
+
+            if (systemEnabled && abs(v_theta) < 45*M_PI/180) {
                 //position loop
                 target_angle = positionPID.compute(target_position, v_position, dt);
                 //velocity loop
@@ -216,7 +220,7 @@ void controlTask(void *pvParameters) {
                 v_pwm = 0;
                 driveMotors(0);
                 positionPID.reset();
-                velocityPID.reset();
+                //velocityPID.reset();
                 anglePID.reset();
                 v_position = 0; // Reset position to prevent integral windup
                 v_velocity = 0; // Reset velocity to prevent integral windup
