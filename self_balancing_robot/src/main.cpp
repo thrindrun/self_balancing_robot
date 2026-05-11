@@ -29,7 +29,8 @@ class TuningHandler: public NimBLECharacteristicCallbacks {
 //pid positionPID(0.5, 0.0, 0.02, -2,2); // PID for position control
 //pid velocityPID(0.6, 0.0, 0.02, -5, 5); // PID for velocity control
 //pid anglePID(25.0,0.0,0.2,-1023,1023);
-pid positionPID(0.0018, 0, 0.0507, -2*M_PI/180, 2*M_PI/180); // PID for position control
+pid positionPID(0.0018, 0, 0.0507, -4*M_PI/180, 4*M_PI/180); // PID for position control
+//pid positionPID(0.002, 0, 0.005, -4*M_PI/180, 4*M_PI/180); // PID for position control
 pid anglePID(2000.0, 114.6763, 10.0, -1023, 1023);
 
 MPU6050 mpu;
@@ -43,8 +44,8 @@ const int leftEncA = 19, leftEncB = 23, rightEncA = 16, rightEncB = 17;
 const int SDA_PIN = 21, SCL_PIN = 22;
 
 
-float final_target = 1;
-float alpha = 0.1;
+float final_target = .5;
+float alpha = 0.2;
 unsigned long startTime = 0;
 bool movingToTarget = false;
 
