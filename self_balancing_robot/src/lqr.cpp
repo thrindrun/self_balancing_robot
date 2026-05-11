@@ -8,7 +8,7 @@ lqr::lqr(float _k1, float _k2, float _k3, float _k4, float _min, float _max) {
 
 float lqr::compute(float x, float x_dot, float theta, float theta_dot) {
     // u = -kx
-    float output = -(k1*x+k2*x_dot+k3*theta+k4*theta_dot);
+    float output = -(k1*(x-theta)+k2*(x_dot-theta_dot)+k3*theta+k4*theta_dot);
     if (output > maxOut) output = maxOut;
     else if (output < minOut) output = minOut;
     return output;

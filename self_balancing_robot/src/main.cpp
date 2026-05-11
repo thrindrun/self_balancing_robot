@@ -19,7 +19,7 @@ class ConnectionHandler: public NimBLEServerCallbacks {
 
 // LQR Kurulumu (Katsayıları sistemine göre ayarlamalısın)
 // Durumlar: [Mesafe (x), Hız (x_dot), Açı (theta), Açısal Hız (theta_dot)]
-float k1 = -70.7107, k2 = -50.1869, k3 = -162.3399, k4 = -24.6664; 
+float k1 = -10, k2 = -30, k3 = -2000, k4 = -60; 
 lqr lqr1(k1, k2, k3, k4, -1023, 1023);
 
 MPU6050 mpu;
@@ -129,6 +129,7 @@ void controlTask(void *pvParameters) {
     Quaternion q;
     VectorFloat gravity;
     float ypr[3];
+    VectorInt16 gyro;
     float last_theta = 0;
     long lastLeftCount = 0, lastRightCount = 0;
 
@@ -161,10 +162,11 @@ void controlTask(void *pvParameters) {
             mpu.dmpGetQuaternion(&q, fifoBuffer);
             mpu.dmpGetGravity(&gravity, &q);
             mpu.dmpGetYawPitchRoll(ypr, &q, &gravity);
-            
+            mpu.dmpGetGyro(&gyro, fifoBuffer);
             v_theta = ypr[1]; // Radyan cinsinden (LQR genelde radyan tercih eder)
-            v_theta_dot = (v_theta - last_theta) / dt;
-            last_theta = v_theta;
+            v_theta_dot = (gyro.y / 131.0) * (M_PI / 180.0);
+            //last_theta = v_theta;
+            
 
             // 3. LQR Hesaplama
             if (systemEnabled && abs(v_theta * 180/M_PI) < 45) {
