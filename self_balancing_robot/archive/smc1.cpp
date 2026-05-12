@@ -1,4 +1,4 @@
-#include "smc.h"
+#include "smc1.h"
 #include <Arduino.h>
 
 smc::smc(float _c1, float _c2, float _c3, float _c4, float _eta, float _phi, float _min, float _max) {

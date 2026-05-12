@@ -20,7 +20,7 @@ class ConnectionHandler: public NimBLEServerCallbacks {
 
 // SMC Tanımlaması (Başlangıç değerleri)
 // c1: pos, c2: vel, c3: theta, c4: theta_dot, eta: kazanç, phi: boundary layer
-smc smcController(1.0, 1.0, 20.0, 2.0, 500.0, 0.5, -1023, 1023);
+smc smcController(1.0, 1.0, 20.0, 2.0, 800.0, 2.0, -1023, 1023);
 
 MPU6050 mpu;
 volatile long leftEncoderCount = 0, rightEncoderCount = 0;

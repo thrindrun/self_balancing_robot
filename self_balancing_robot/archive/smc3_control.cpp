@@ -1,7 +1,7 @@
 #include <Arduino.h>
 #include <NimBLEDevice.h>
 #include <math.h>
-#include "smc.h" // Kendi yazdığın SMC kütüphanesi
+#include "smc3.h" // Kendi yazdığın SMC kütüphanesi
 #include "I2Cdev.h"
 #include "MPU6050_6Axis_MotionApps20.h"
 
@@ -19,8 +19,7 @@ class ConnectionHandler: public NimBLEServerCallbacks {
 };
 
 // SMC Tanımlaması (Başlangıç değerleri)
-// c1: pos, c2: vel, c3: theta, c4: theta_dot, eta: kazanç, phi: boundary layer
-smc smcController(1.0, 1.0, 20.0, 2.0, 500.0, 0.5, -1023, 1023);
+smc smcController(30.0, 60.0, 1.0/3.0, 1500.0/60.0, 800.0, 2.0, -1023, 1023);
 
 MPU6050 mpu;
 volatile long leftEncoderCount = 0, rightEncoderCount = 0;
@@ -91,10 +90,10 @@ void loop() {
             if (type == 'S') systemEnabled = true;
             else if (type == 'X') { systemEnabled = false; driveMotors(0); }
             // SMC Parametre Güncellemeleri
-            else if (type == '1') smcController.setC1(val); // Örn: "10.5" -> c1=0.5
-            else if (type == '2') smcController.setC2(val);
-            else if (type == '3') smcController.setC3(val);
-            else if (type == '4') smcController.setC4(val);
+            else if (type == '1') smcController.setK1(val); // Örn: "10.5" -> c1=0.5
+            else if (type == '2') smcController.setK2(val);
+            else if (type == '3') smcController.setLambda1(val);
+            else if (type == '4') smcController.setLambda2(val);
             else if (type == 'E') smcController.setEta(val);
             else if (type == 'F') smcController.setPhi(val);
 
