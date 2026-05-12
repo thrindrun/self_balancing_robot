@@ -39,6 +39,7 @@ bool systemEnabled = false;
 void setupBLE();
 void driveMotors(float pwm);
 void controlTask(void *pvParameters);
+void sendConfirmation(const char* message);
 
 void setup() {
     Serial.begin(115200);
@@ -93,53 +94,69 @@ void loop() {
             char type = rxValue[0];
             float val = atof(rxValue.substr(1).c_str());
 
-            if (type == 'S') { // start
-                systemEnabled = true;
-                char confirmBuf[64];
-                int cLen = snprintf(confirmBuf, sizeof(confirmBuf), ">> System Enabled\n");
-                pTxCharacteristic->setValue((uint8_t*)confirmBuf, cLen);
-                pTxCharacteristic->notify();
-            } else if (type == 'X') {  // stop
-                systemEnabled = false; 
-                driveMotors(0);
-                char confirmBuf[64];
-                int cLen = snprintf(confirmBuf, sizeof(confirmBuf), ">> System Disabled\n");
-                pTxCharacteristic->setValue((uint8_t*)confirmBuf, cLen);
-                pTxCharacteristic->notify();
-            } else if (type == 'M') { // mode change
-                activeMode = (mode)((int)val);
-                char confirmBuf[64];
-                int cLen = snprintf(confirmBuf, sizeof(confirmBuf), ">> Mode Set To %d\n", (int)activeMode);
-                pTxCharacteristic->setValue((uint8_t*)confirmBuf, cLen);
-                pTxCharacteristic->notify();
+            switch (type) { 
+                case 'S':
+                    systemEnabled = true;
+                    sendConfirmation(">> System enabled\n");
+                    break;
+                case 'X':
+                    systemEnabled = false;
+                    driveMotors(0);
+                    sendConfirmation(">> System disabled\n");
+                    break;
+                case 'M': {
+                    activeMode = (mode)((int)val);
+                    char modeBuf[64];
+                    snprintf(modeBuf, sizeof(modeBuf), ">> Mode set to %d\n", (int)activeMode);
+                    sendConfirmation(modeBuf);
+                    break;
+                }
+                case '1':
+                    switch (activeMode) {
+                        case Cls: smc.setClsC1(val); break;
+                        case Hyb: smc.setHybK1(val); break;
+                        case Hie: smc.setHieK1(val); break;
+                    }
+                    break;
+                case '2':
+                    switch (activeMode) {
+                        case Cls: smc.setClsC2(val); break;
+                        case Hyb: smc.setHybK2(val); break;
+                        case Hie: smc.setHieK2(val); break;
+                    }
+                    break;
+                case '3':
+                    switch (activeMode) {
+                        case Cls: smc.setClsC3(val); break;
+                        case Hyb: smc.setHybK3(val); break;
+                        case Hie: smc.setHieLambda1(val); break;
+                    }
+                    break;
+                case '4':
+                    switch (activeMode) {
+                        case Cls: smc.setClsC4(val); break;
+                        case Hyb: smc.setHybK4(val); break;
+                        case Hie: smc.setHieLambda2(val); break;
+                    }
+                    break;
+                case '5':
+                    switch (activeMode) {
+                        case Cls: smc.setClsEta(val); break;
+                        case Hyb: smc.setHybLambda1(val); break;
+                        case Hie: smc.setHieEta(val); break;
+                    }
+                    break;
+                case '6':
+                    switch (activeMode) {
+                        case Cls: smc.setClsPhi(val); break;
+                        case Hyb: smc.setHybLambda2(val); break;
+                        case Hie: smc.setHiePhi(val); break;
+                    }
+                    break;
+                default:
+                    sendConfirmation(">> Unknown command\n");
+                    break;
             }
-            // Parameter update
-            else if (type == '1') {
-                if (activeMode == Cls) smc.setClsC1(val);
-                else if (activeMode == Hyb) smc.setHybK1(val);
-                else if (activeMode == Hie) smc.setHieK1(val);
-            } else if (type == '2') {
-                if (activeMode == Cls) smc.setClsC2(val);
-                else if (activeMode == Hyb) smc.setHybK2(val);
-                else if (activeMode == Hie) smc.setHieK2(val);
-            } else if (type == '3') {
-                if (activeMode == Cls) smc.setClsC3(val);
-                else if (activeMode == Hyb) smc.setHybK3(val);
-                else if (activeMode == Hie) smc.setHieLambda1(val);
-            } else if (type == '4') {
-                if (activeMode == Cls) smc.setClsC4(val);
-                else if (activeMode == Hyb) smc.setHybK4(val);
-                else if (activeMode == Hie) smc.setHieLambda2(val);
-            } else if (type == '5') {
-                if (activeMode == Cls) smc.setClsEta(val);
-                else if (activeMode == Hyb) smc.setHybLambda1(val);
-                else if (activeMode == Hie) smc.setHieEta(val);
-            } else if (type == '6') {
-                if (activeMode == Cls) smc.setClsPhi(val);
-                else if (activeMode == Hyb) smc.setHybLambda2(val);
-                else if (activeMode == Hie) smc.setHiePhi(val);
-            }
-            
             pRxCharacteristic->setValue(""); 
         }
     }
@@ -222,6 +239,7 @@ void driveMotors(float pwm) {
 
 void setupBLE() {
     NimBLEDevice::init("ESP32_SMC_Bot");
+    NimBLEDevice::setMTU(100);
     pServer = NimBLEDevice::createServer();
     pServer->setCallbacks(new ConnectionHandler());
     NimBLEService* pService = pServer->createService("6E400001-B5A3-F393-E0A9-E50E24DCCA9E");
@@ -229,4 +247,12 @@ void setupBLE() {
     pRxCharacteristic = pService->createCharacteristic("6E400002-B5A3-F393-E0A9-E50E24DCCA9E", NIMBLE_PROPERTY::WRITE);
     pService->start();
     pServer->getAdvertising()->start();
+}
+
+void sendConfirmation(const char* message) {
+    if (deviceConnected) {
+        int len = strlen(message);
+        pTxCharacteristic->setValue((uint8_t*)message, len);
+        pTxCharacteristic->notify();
+    }
 }
