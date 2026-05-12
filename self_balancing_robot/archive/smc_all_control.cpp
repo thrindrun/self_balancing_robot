@@ -1,7 +1,7 @@
 #include <Arduino.h>
 #include <NimBLEDevice.h>
 #include <math.h>
-#include "smc.h" // Kendi yazdığın SMC kütüphanesi
+#include "smc_all.h" // Kendi yazdığın SMC kütüphanesi
 #include "I2Cdev.h"
 #include "MPU6050_6Axis_MotionApps20.h"
 

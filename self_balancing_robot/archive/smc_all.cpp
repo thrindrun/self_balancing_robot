@@ -1,4 +1,4 @@
-#include "smc.h"
+#include "smc_all.h"
 #include <Arduino.h>
 #include <math.h>
 
