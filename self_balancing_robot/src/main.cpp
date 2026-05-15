@@ -21,7 +21,7 @@ class ConnectionHandler: public NimBLEServerCallbacks {
 // SMC Tanımlaması (Başlangıç değerleri)
 SMC smc(-1023,1023);
 enum mode {Cls = 1, Hyb = 2, Hie = 3};
-mode activeMode = Hie;
+mode activeMode = Hyb;
 
 MPU6050 mpu;
 volatile long leftEncoderCount = 0, rightEncoderCount = 0;
@@ -45,9 +45,9 @@ void setup() {
     Serial.begin(115200);
     setupBLE();
 
-    smc.setParamsCls(10.0, 30.0, 1500.0, 60.0, 800.0, 2.0);
-    smc.setParamsHyb(30.0, 60.0, 5.0, 12.0, 1.0/3.0, 1500.0/60.0);
-    smc.setParamsHie(30.0, 60.0, 1.0/3.0, 1500.0/60.0, 800.0, 2.0);
+    smc.setParamsCls(10.0, 30.0, -1500.0, -60.0, 800.0, 2.0);
+    smc.setParamsHyb(30.0, 60.0, 5.0, 10.0, 1.0/3.0, 1500.0/60.0);
+    smc.setParamsHie(30.0, -40.0, 1.0/3.0, 1000.0/60.0, 600.0, 10.0);
     
     // PWM Ayarları (10-bit: 0-1023)
     ledcSetup(0, 20000, 10); ledcSetup(1, 20000, 10); 
@@ -92,6 +92,10 @@ void loop() {
         std::string rxValue = pRxCharacteristic->getValue();
         if (!rxValue.empty()) {
             char type = rxValue[0];
+            if (type == '\0' || type == '\n' || type == '\r') {
+                pRxCharacteristic->setValue("");
+                return;
+            }
             float val = atof(rxValue.substr(1).c_str());
 
             switch (type) { 
@@ -203,8 +207,8 @@ void controlTask(void *pvParameters) {
 
             if (systemEnabled && abs(v_theta) < 45*M_PI/180) {
                 switch (activeMode) {
-                    case Cls: v_pwm = smc.computeCls(v_position, v_velocity, v_theta, theta_dot); break;
-                    case Hyb: v_pwm = smc.computeHyb(v_position, v_velocity, v_theta, theta_dot); break;
+                    case Cls: v_pwm = -smc.computeCls(v_position, v_velocity, v_theta, theta_dot); break;
+                    case Hyb: v_pwm = -smc.computeHyb(v_position, v_velocity, v_theta, theta_dot); break;
                     case Hie: v_pwm = smc.computeHie(v_position, v_velocity, v_theta, theta_dot); break;
                 }
                 driveMotors(v_pwm);

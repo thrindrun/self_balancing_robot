@@ -78,7 +78,11 @@ async def ble_task():
             messages = send_queue.pop_all()
             for msg in messages:
                 if msg == "QUIT": return
-                await client.write_gatt_char(RX_CHAR_UUID, msg.encode('utf-8'))
+                try:
+                    await client.write_gatt_char(RX_CHAR_UUID, msg.encode('utf-8'))
+                    await asyncio.sleep(0.1)  # Small delay to avoid overwhelming the ESP32
+                except Exception as e:
+                    print(f"Write error: {e}")
             await asyncio.sleep(0.05)
 
 def input_thread():
