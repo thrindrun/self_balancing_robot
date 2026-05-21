@@ -2,6 +2,8 @@
 #include <NimBLEDevice.h>
 #include <math.h>
 #include "smc.h" // Kendi yazdığın SMC kütüphanesi
+#include "pid.h" // Kendi yazdığın PID kütüphanesi
+#include "lqr.h" // Kendi yazdığın LQR kütüphanesi
 #include "I2Cdev.h"
 #include "MPU6050_6Axis_MotionApps20.h"
 
@@ -17,10 +19,12 @@ class ConnectionHandler: public NimBLEServerCallbacks {
     void onConnect(NimBLEServer* pServer) { deviceConnected = true; };
     void onDisconnect(NimBLEServer* pServer) { deviceConnected = false; }
 };
-
+lqr lqr1 = lqr(-10, -30, -2000, -60, -1023, 1023);
+pid positionPID = pid(0.0018, 0, 0.0507, -1023, 1023);
+pid anglePID = pid(2000.0, 114.6763, 10.0, -1023, 1023);
 // SMC Tanımlaması (Başlangıç değerleri)
 SMC smc(-1023,1023);
-enum mode {Cls = 1, Hyb = 2, Hie = 3};
+enum mode {Cls = 1, Hyb = 2, Hie = 3, PID = 4, LQR = 5};
 mode activeMode = Hyb;
 
 MPU6050 mpu;
@@ -157,6 +161,21 @@ void loop() {
                         case Hie: smc.setHiePhi(val); break;
                     }
                     break;
+                switch (activeMode) {
+                    case PID:
+                        switch (type) {
+                            case 'P': positionPID.setKp(val); break;
+                            case 'I': positionPID.setKi(val); break;
+                            case 'D': positionPID.setKd(val); break;
+                        }
+                    case LQR:
+                        switch (type) {
+                            case '1': lqr1.setK1(val); break;
+                            case '2': lqr1.setK2(val); break;
+                            case '3': lqr1.setK3(val); break;
+                            case '4': lqr1.setK4(val); break;
+                        }
+                }
                 default:
                     sendConfirmation(">> Unknown command\n");
                     break;
@@ -176,6 +195,7 @@ void controlTask(void *pvParameters) {
     uint8_t fifoBuffer[64];
     Quaternion q; VectorFloat gravity; float ypr[3];
     float last_theta = 0; long lastLeftCount = 0, lastRightCount = 0;
+    float target_position = 0; float target_angle = 0;
 
     TickType_t xLastWakeTime = xTaskGetTickCount();
     const TickType_t xFrequency = pdMS_TO_TICKS(5); 
@@ -209,12 +229,20 @@ void controlTask(void *pvParameters) {
                 switch (activeMode) {
                     case Cls: v_pwm = -smc.computeCls(v_position, v_velocity, v_theta, theta_dot); break;
                     case Hyb: v_pwm = -smc.computeHyb(v_position, v_velocity, v_theta, theta_dot); break;
-                    case Hie: v_pwm = smc.computeHie(v_position, v_velocity, v_theta, theta_dot); break;
+                    case Hie: v_pwm = -smc.computeHie(v_position, v_velocity, v_theta, theta_dot); break;
+                    case LQR: v_pwm = -lqr1.compute(v_position, v_velocity, v_theta, theta_dot); break;
+                    case PID: {
+                        target_angle = positionPID.compute(target_position, v_position, dt);
+                        v_pwm = -anglePID.compute(target_angle, v_theta, dt);
+                        break;
+                    }
                 }
                 driveMotors(v_pwm);
             } else {
                 driveMotors(0);
                 v_position = 0; v_velocity = 0;
+                positionPID.reset(); anglePID.reset();
+                target_position = 0; target_angle = 0;
             }
         }
     }
