@@ -20,16 +20,18 @@ class ConnectionHandler: public NimBLEServerCallbacks {
     void onDisconnect(NimBLEServer* pServer) { deviceConnected = false; }
 };
 lqr lqr1 = lqr(-10, -30, -2000, -60, -1023, 1023);
-pid positionPID = pid(0.0018, 0, 0.0507, -1023, 1023);
+pid positionPID = pid(0.0018, 0, 0.0507, -4*M_PI/180, 4*M_PI/180);
 pid anglePID = pid(2000.0, 114.6763, 10.0, -1023, 1023);
 // SMC Tanımlaması (Başlangıç değerleri)
 SMC smc(-1023,1023);
 enum mode {Cls = 1, Hyb = 2, Hie = 3, PID = 4, LQR = 5};
 mode activeMode = Hyb;
+enum angVelocityType {Gyro = 1, Diff = 2};
+angVelocityType angleVelocityType = Diff;
 
 MPU6050 mpu;
 volatile long leftEncoderCount = 0, rightEncoderCount = 0;
-volatile float v_theta = 0, v_position = 0, v_pwm = 0, v_velocity = 0;
+volatile float v_theta = 0, v_position = 0, v_pwm = 0, v_velocity = 0, v_theta_dot = 0;
 
 // Pin Tanımlamaları (Önceki PID kodunla aynı)
 const int R_PWM_L = 2, L_PWM_L = 4; const int R_PWM_R = 5, L_PWM_R = 18;
@@ -119,11 +121,20 @@ void loop() {
                     sendConfirmation(modeBuf);
                     break;
                 }
+                case 'A': {
+                    angleVelocityType = (angVelocityType)((int)val);
+                    char typeBuf[64];
+                    snprintf(typeBuf, sizeof(typeBuf), ">> Angle velocity type set to %d\n", (int)angleVelocityType);
+                    sendConfirmation(typeBuf);
+                    break;
+                }
                 case '1':
                     switch (activeMode) {
                         case Cls: smc.setClsC1(val); break;
                         case Hyb: smc.setHybK1(val); break;
                         case Hie: smc.setHieK1(val); break;
+                        case LQR: lqr1.setK1(val); break;
+                        case PID: anglePID.setKp(val); break;
                     }
                     break;
                 case '2':
@@ -131,6 +142,8 @@ void loop() {
                         case Cls: smc.setClsC2(val); break;
                         case Hyb: smc.setHybK2(val); break;
                         case Hie: smc.setHieK2(val); break;
+                        case LQR: lqr1.setK2(val); break;
+                        case PID: anglePID.setKi(val); break;
                     }
                     break;
                 case '3':
@@ -138,6 +151,8 @@ void loop() {
                         case Cls: smc.setClsC3(val); break;
                         case Hyb: smc.setHybK3(val); break;
                         case Hie: smc.setHieLambda1(val); break;
+                        case LQR: lqr1.setK3(val); break;
+                        case PID: anglePID.setKd(val); break;
                     }
                     break;
                 case '4':
@@ -145,6 +160,8 @@ void loop() {
                         case Cls: smc.setClsC4(val); break;
                         case Hyb: smc.setHybK4(val); break;
                         case Hie: smc.setHieLambda2(val); break;
+                        case LQR: lqr1.setK4(val); break;
+                        case PID: positionPID.setKp(val); break;
                     }
                     break;
                 case '5':
@@ -152,6 +169,8 @@ void loop() {
                         case Cls: smc.setClsEta(val); break;
                         case Hyb: smc.setHybLambda1(val); break;
                         case Hie: smc.setHieEta(val); break;
+                        case LQR: break;
+                        case PID: positionPID.setKi(val); break;
                     }
                     break;
                 case '6':
@@ -159,23 +178,10 @@ void loop() {
                         case Cls: smc.setClsPhi(val); break;
                         case Hyb: smc.setHybLambda2(val); break;
                         case Hie: smc.setHiePhi(val); break;
+                        case LQR: break;
+                        case PID: positionPID.setKd(val); break;
                     }
                     break;
-                switch (activeMode) {
-                    case PID:
-                        switch (type) {
-                            case 'P': positionPID.setKp(val); break;
-                            case 'I': positionPID.setKi(val); break;
-                            case 'D': positionPID.setKd(val); break;
-                        }
-                    case LQR:
-                        switch (type) {
-                            case '1': lqr1.setK1(val); break;
-                            case '2': lqr1.setK2(val); break;
-                            case '3': lqr1.setK3(val); break;
-                            case '4': lqr1.setK4(val); break;
-                        }
-                }
                 default:
                     sendConfirmation(">> Unknown command\n");
                     break;
@@ -196,6 +202,7 @@ void controlTask(void *pvParameters) {
     Quaternion q; VectorFloat gravity; float ypr[3];
     float last_theta = 0; long lastLeftCount = 0, lastRightCount = 0;
     float target_position = 0; float target_angle = 0;
+    VectorInt16 gyro;
 
     TickType_t xLastWakeTime = xTaskGetTickCount();
     const TickType_t xFrequency = pdMS_TO_TICKS(5); 
@@ -220,17 +227,20 @@ void controlTask(void *pvParameters) {
             mpu.dmpGetQuaternion(&q, fifoBuffer);
             mpu.dmpGetGravity(&gravity, &q);
             mpu.dmpGetYawPitchRoll(ypr, &q, &gravity);
-            
+            mpu.dmpGetGyro(&gyro, fifoBuffer);
             v_theta = ypr[1]; // Radyan cinsinden pitch
-            float theta_dot = (v_theta - last_theta) / dt;
+            switch (angleVelocityType) {
+                case Gyro: v_theta_dot = (gyro.y / 131.0) * (M_PI / 180.0); break;
+                case Diff: v_theta_dot = (v_theta - last_theta) / dt; break;
+            }
             last_theta = v_theta;
 
             if (systemEnabled && abs(v_theta) < 45*M_PI/180) {
                 switch (activeMode) {
-                    case Cls: v_pwm = -smc.computeCls(v_position, v_velocity, v_theta, theta_dot); break;
-                    case Hyb: v_pwm = -smc.computeHyb(v_position, v_velocity, v_theta, theta_dot); break;
-                    case Hie: v_pwm = -smc.computeHie(v_position, v_velocity, v_theta, theta_dot); break;
-                    case LQR: v_pwm = -lqr1.compute(v_position, v_velocity, v_theta, theta_dot); break;
+                    case Cls: v_pwm = -smc.computeCls(v_position, v_velocity, v_theta, v_theta_dot); break;
+                    case Hyb: v_pwm = -smc.computeHyb(v_position, v_velocity, v_theta, v_theta_dot); break;
+                    case Hie: v_pwm = -smc.computeHie(v_position, v_velocity, v_theta, v_theta_dot); break;
+                    case LQR: v_pwm = -lqr1.compute(v_position, v_velocity, v_theta, v_theta_dot); break;
                     case PID: {
                         target_angle = positionPID.compute(target_position, v_position, dt);
                         v_pwm = -anglePID.compute(target_angle, v_theta, dt);

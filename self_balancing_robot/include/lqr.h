@@ -9,10 +9,10 @@ class lqr {
     public:
         lqr(float _k1, float _k2, float _k3, float _k4, float _min, float _max);
         float compute(float x, float x_dot, float theta, float theta_dot);
-        void setK1(float _k1) {k1 = _k1;}
-        void setK2(float _k2) {k2 = _k2;}
-        void setK3(float _k3) {k3 = _k3;}
-        void setK4(float _k4) {k4 = _k4;}
+        void setK1(float _k1);
+        void setK2(float _k2);
+        void setK3(float _k3);
+        void setK4(float _k4);
 };
 
 #endif

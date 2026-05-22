@@ -100,6 +100,10 @@ col_plots, col_tuning = st.columns([2, 1])
 
 with col_plots:
     st.subheader("Live Telemetry")
+    chart_angle = st.empty()
+    chart_pwm = st.empty()
+    chart_pos = st.empty()
+
     with state.lock:
         df = pd.DataFrame({
             'Time': list(state.times),
@@ -109,39 +113,67 @@ with col_plots:
         }).set_index('Time')
     
     if not df.empty:
-        st.line_chart(df[['Angle']])
-        st.line_chart(df[['PWM']])
-        st.line_chart(df[['Pos']])
+        chart_angle.line_chart(df[['Angle']])
+        chart_pwm.line_chart(df[['PWM']])
+        chart_pos.line_chart(df[['Pos']])
     else:
         st.info("Awaiting telemetry stream...")
 
 with col_tuning:
     st.subheader(f"Tuning: {selected_mode}")
     
-    # Dynamic Input Fields based on Mode
-    inputs = {}
+    # 1. Establish labels based strictly on the selected mode
     if selected_mode == "Classic":
         labels = ["C1", "C2", "C3", "C4", "Eta", "Phi"]
     elif selected_mode == "Hybrid":
         labels = ["K1", "K2", "K3", "K4", "Lambda1", "Lambda2"]
-    elif selected_mode == "Hierarchical": # Hierarchical
+    elif selected_mode == "Hierarchical":
         labels = ["K1", "K2", "Lambda1", "Lambda2", "Eta", "Phi"]
     elif selected_mode == "PID":
         labels = ["Ang Kp", "Ang Ki", "Ang Kd", "Pos Kp", "Pos Ki", "Pos Kd"]
     elif selected_mode == "LQR":
         labels = ["K1", "K2", "K3", "K4"]
 
-    for i, label in enumerate(labels):
-        inputs[i+1] = st.number_input(f"{label}", value=0.0, format="%.4f")
+    # Track current mode in session state to handle clean visual transitions
+    if "current_mode" not in st.session_state:
+        st.session_state.current_mode = selected_mode
 
-    if st.button("Update Gains"):
+    # If the user changed the radio button selection, manually purge old elements 
+    # from the active session dictionary before rendering the new form.
+    if st.session_state.current_mode != selected_mode:
+        # Scan and destroy any leftover field keys from the previous run
+        keys_to_clear = [k for k in st.session_state.keys() if "field_" in k or "tuning_form_" in k]
+        for k in keys_to_clear:
+            del st.session_state[k]
+        st.session_state.current_mode = selected_mode
+        st.rerun()
+
+    inputs = {}
+    
+    # 2. Use a unique form structure that destroys itself on mode changes
+    with st.form(key=f"tuning_form_instance_{selected_mode}", clear_on_submit=False):
+        for i, label in enumerate(labels):
+            # Form elements must have an isolated, strict naming structure
+            inputs[i+1] = st.number_input(
+                f"{label}", 
+                value=0.0, 
+                format="%.4f", 
+                key=f"field_{selected_mode}_{label}"
+            )
+            
+        submit_button = st.form_submit_button("Update Gains", use_container_width=True)
+
+    # 3. Process data cleanly when the form is submitted
+    if submit_button:
         with state.lock:
             for idx, val in inputs.items():
                 state.send_queue.append(f"{idx}{val:.4f}")
         
-        if 'history' not in st.session_state: st.session_state.history = []
+        if 'history' not in st.session_state: 
+            st.session_state.history = []
         entry = {"Time": time.strftime("%H:%M:%S"), "Mode": selected_mode}
-        for i, label in enumerate(labels): entry[label] = inputs[i+1]
+        for i, label in enumerate(labels): 
+            entry[label] = inputs[i+1]
         st.session_state.history.insert(0, entry)
 
 st.divider()
